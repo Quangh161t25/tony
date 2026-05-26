@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống Quản lý Thông tin</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/10.5.25/jsrsasign-all-min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <div id="loading" class="loading-mask">
+        <div class="spinner"></div>
+        <p>Đang tải dữ liệu...</p>
+    </div>
+
+    <div id="dropOverlay">
+        <div class="drop-message">
+            <i data-lucide="upload-cloud" style="width: 48px; height: 48px;"></i>
+            Thả file vào đây để tải dữ liệu lên ${currentTab}
+        </div>
+    </div>
+
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <div class="logo" style="font-size: 16px; font-weight: 800; line-height: 1.2; text-align: center;">INFO<br>SYS</div>
+                    <h1 id="pageTitle">Hệ thống</h1>
+                </div>
+                <button class="sidebar-toggle" type="button" onclick="toggleSidebar()" title="Thu gọn menu">
+                    <i data-lucide="panel-left-close" style="width:18px;"></i>
+                </button>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="THONG_TIN" onclick="switchTab('THONG_TIN')">
+                    <i data-lucide="database" style="width:18px;"></i>
+                    <span>THÔNG TIN</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="header-container">
+                <div id="headerActions">
+                    <div class="search-container">
+                        <i data-lucide="search" class="search-icon" style="width: 18px;"></i>
+                        <input type="text" id="searchInput" class="search-input" placeholder="Tìm kiếm nhanh..."
+                            oninput="filterTable()">
+                    </div>
+                    <input id="truongFilter" class="filter-input" type="text" list="truongOptions" placeholder="Lọc theo Trường..."
+                        oninput="filterTable()">
+
+                    <button id="reloadBtn" type="button" onclick="reloadCurrentTab()">
+                        <i data-lucide="refresh-cw" style="width:18px;"></i> Load lại
+                    </button>
+                    <button id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+                        <i data-lucide="upload" style="width:18px;"></i> Tải Dữ Liệu Lên
+                    </button>
+                    <button id="addBtn" type="button" onclick="openRecordForm()">
+                        <i data-lucide="plus" style="width:18px;"></i> Thêm mới
+                    </button>
+                    <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
+                </div>
+            </div>
+
+            <div class="table-wrapper" id="tableWrapper">
+                <table id="dataTable">
+                    <thead id="tableHead">
+                        <!-- Headers will be injected here -->
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Data rows will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="pagination" class="pagination"></div>
+        </main>
+    </div>
+
+    <div class="modal-mask" id="productModal">
+        <form class="modal" onsubmit="saveRecordFromForm(event)">
+            <div class="modal-header">
+                <h2 id="productModalTitle">Thêm mới</h2>
+                <button type="button" class="icon-btn" onclick="closeProductForm()" title="Đóng">
+                    <i data-lucide="x" style="width:18px;"></i>
+                </button>
+            </div>
+            <input type="hidden" id="editingSheetRow">
+            <div id="formFields" class="form-fields"></div>
+            <div class="modal-actions">
+                <button type="button" class="secondary-btn" onclick="closeProductForm()">Hủy</button>
+                <button type="submit" class="primary-btn">Lưu</button>
+            </div>
+        </form>
+    </div>
+    <datalist id="truongOptions"></datalist>
+    <script src="app.js"></script>
+</body>
+
+</html>
