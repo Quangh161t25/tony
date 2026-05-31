@@ -43,6 +43,10 @@
                     <i data-lucide="database" style="width:18px;"></i>
                     <span>THÔNG TIN</span>
                 </div>
+                <div class="tab" data-tab="DON_HANG" onclick="switchTab('DON_HANG')">
+                    <i data-lucide="shopping-cart" style="width:18px;"></i>
+                    <span>ĐƠN HÀNG</span>
+                </div>
             </div>
         </aside>
 
@@ -56,6 +60,9 @@
                     </div>
                     <input id="truongFilter" class="filter-input" type="text" list="truongOptions" placeholder="Lọc theo Trường..."
                         oninput="filterTable()">
+                    <select id="storeFilter" class="filter-input" onchange="filterTable()">
+                        <option value="">Chọn gian hàng...</option>
+                    </select>
 
                     <button id="reloadBtn" type="button" onclick="reloadCurrentTab()">
                         <i data-lucide="refresh-cw" style="width:18px;"></i> Load lại
@@ -100,6 +107,32 @@
                 <button type="submit" class="primary-btn">Lưu</button>
             </div>
         </form>
+    </div>
+    <div class="modal-mask" id="orderDetailModal">
+        <div class="modal order-detail-modal">
+            <div class="modal-header">
+                <h2 id="orderDetailTitle">Chi tiết đơn hàng</h2>
+                <button type="button" class="icon-btn" onclick="closeDonHangDetail()" title="Đóng">
+                    <i data-lucide="x" style="width:18px;"></i>
+                </button>
+            </div>
+            <div id="orderDetailFields" class="order-detail-fields"></div>
+            <div class="order-items-wrapper">
+                <table>
+                    <thead id="orderDetailHead"></thead>
+                    <tbody id="orderDetailBody"></tbody>
+                </table>
+            </div>
+            <div class="order-item-actions">
+                <button type="button" class="secondary-btn" onclick="addDonHangItem()">
+                    <i data-lucide="plus" style="width:16px;"></i> Thêm sản phẩm
+                </button>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="secondary-btn" onclick="closeDonHangDetail()">Đóng</button>
+                <button type="button" class="primary-btn" onclick="saveDonHangDetail()">Lưu thay đổi</button>
+            </div>
+        </div>
     </div>
     <datalist id="truongOptions"></datalist>
     <script src="app.js"></script>
