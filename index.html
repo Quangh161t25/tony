@@ -75,6 +75,27 @@
                     </button>
                     <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
                 </div>
+                <div id="orderFilters" class="order-filters">
+                    <label><span>Từ ngày</span><input id="orderDateFrom" type="date" onchange="filterTable()"></label>
+                    <label><span>Tới ngày</span><input id="orderDateTo" type="date" onchange="filterTable()"></label>
+                    <input id="orderMdhFilter" type="text" placeholder="Lọc MDH..." oninput="filterTable()">
+                    <input id="orderMvdFilter" type="text" placeholder="Lọc MVD..." oninput="filterTable()">
+                    <select id="orderTinhTrangFilter" onchange="filterTable()">
+                        <option value="">Tất cả tình trạng</option>
+                        <option value="HỦY">HỦY</option>
+                        <option value="HOÀN TRẢ">HOÀN TRẢ</option>
+                        <option value="HOÀN THÀNH">HOÀN THÀNH</option>
+                    </select>
+                    <select id="orderTrangThaiFilter" onchange="filterTable()">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="HỦY">HỦY</option>
+                        <option value="HOÀN THÀNH">HOÀN THÀNH</option>
+                    </select>
+                    <div class="order-summary">
+                        <span>TIEN_THU_ĐC: <strong id="orderReceivedTotal">0</strong></span>
+                        <span>LOI_NHUAN: <strong id="orderProfitTotal">0</strong></span>
+                    </div>
+                </div>
             </div>
 
             <div class="table-wrapper" id="tableWrapper">

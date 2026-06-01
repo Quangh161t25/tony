@@ -92,6 +92,7 @@ async function switchTab(tabName) {
     const addBtn = document.getElementById('addBtn');
     const truongFilter = document.getElementById('truongFilter');
     const storeFilter = document.getElementById('storeFilter');
+    const orderFilters = document.getElementById('orderFilters');
     const isThongTinModule = currentTab === 'THONG_TIN';
     const isDonHangModule = currentTab === 'DON_HANG';
     if (uploadBtn) {
@@ -106,6 +107,9 @@ async function switchTab(tabName) {
     }
     if (storeFilter) {
         storeFilter.style.display = isDonHangModule ? 'block' : 'none';
+    }
+    if (orderFilters) {
+        orderFilters.style.display = isDonHangModule ? 'flex' : 'none';
     }
     document.getElementById('searchInput').value = '';
     resetFilters();
@@ -144,6 +148,10 @@ async function fetchData() {
             return arr;
         });
         filteredData = currentTab === 'DON_HANG' ? getDonHangSummaryRows() : [...allData];
+        if (currentTab === 'DON_HANG') {
+            filteredData.sort((a, b) => parseDonHangDateTime(b[DON_HANG_INDEX.ngay_h]) - parseDonHangDateTime(a[DON_HANG_INDEX.ngay_h]));
+            updateDonHangSummary();
+        }
         populateFilters();
         renderHeaders();
         renderTable();
@@ -283,7 +291,7 @@ function populateFilters() {
 }
 
 function resetFilters() {
-    ['truongFilter', 'storeFilter'].forEach(id => {
+    ['truongFilter', 'storeFilter', 'orderDateFrom', 'orderDateTo', 'orderMdhFilter', 'orderMvdFilter', 'orderTinhTrangFilter', 'orderTrangThaiFilter'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
@@ -827,6 +835,14 @@ function filterTable() {
     const term = document.getElementById('searchInput').value.toLowerCase();
     const truong = (document.getElementById('truongFilter')?.value || '').toLowerCase();
     const store = (document.getElementById('storeFilter')?.value || '').toLowerCase();
+    const dateFrom = document.getElementById('orderDateFrom')?.value || '';
+    const dateTo = document.getElementById('orderDateTo')?.value || '';
+    const mdh = (document.getElementById('orderMdhFilter')?.value || '').toLowerCase();
+    const mvd = (document.getElementById('orderMvdFilter')?.value || '').toLowerCase();
+    const tinhTrang = (document.getElementById('orderTinhTrangFilter')?.value || '').toLowerCase();
+    const trangThai = (document.getElementById('orderTrangThaiFilter')?.value || '').toLowerCase();
+    const dateFromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : 0;
+    const dateToTime = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : 0;
     const sourceData = currentTab === 'DON_HANG' ? getDonHangSummaryRows() : allData;
     filteredData = sourceData.filter(row => {
         const matchesSearch = currentTab === 'DON_HANG'
@@ -835,10 +851,31 @@ function filterTable() {
             : row.some(cell => String(cell).toLowerCase().includes(term));
         const matchesTruong = !truong || String(row[1] || '').toLowerCase().includes(truong);
         const matchesStore = currentTab !== 'DON_HANG' || !store || String(row[DON_HANG_INDEX.gian_hang] || '').toLowerCase().includes(store);
-        return matchesSearch && matchesTruong && matchesStore;
+        if (currentTab !== 'DON_HANG') return matchesSearch && matchesTruong && matchesStore;
+        const orderTime = parseDonHangDateTime(row[DON_HANG_INDEX.ngay_h]);
+        const matchesDateFrom = !dateFromTime || orderTime >= dateFromTime;
+        const matchesDateTo = !dateToTime || orderTime <= dateToTime;
+        const matchesMdh = !mdh || String(row[DON_HANG_INDEX.mdh] || '').toLowerCase().includes(mdh);
+        const matchesMvd = !mvd || String(row[DON_HANG_INDEX.mvd] || '').toLowerCase().includes(mvd);
+        const matchesTinhTrang = !tinhTrang || String(row[DON_HANG_INDEX.tinh_trang] || '').toLowerCase() === tinhTrang;
+        const matchesTrangThai = !trangThai || String(row[DON_HANG_INDEX.trang_thai] || '').toLowerCase() === trangThai;
+        return matchesSearch && matchesStore && matchesDateFrom && matchesDateTo && matchesMdh && matchesMvd && matchesTinhTrang && matchesTrangThai;
     });
+    if (currentTab === 'DON_HANG') {
+        filteredData.sort((a, b) => parseDonHangDateTime(b[DON_HANG_INDEX.ngay_h]) - parseDonHangDateTime(a[DON_HANG_INDEX.ngay_h]));
+        updateDonHangSummary();
+    }
     currentPage = 1;
     renderTable();
+}
+
+function updateDonHangSummary() {
+    const receivedTotal = filteredData.reduce((sum, row) => sum + parseMoney(row[DON_HANG_INDEX['tien_thu_đc']]), 0);
+    const profitTotal = filteredData.reduce((sum, row) => sum + parseMoney(row[DON_HANG_INDEX.loi_nhuan]), 0);
+    const receivedEl = document.getElementById('orderReceivedTotal');
+    const profitEl = document.getElementById('orderProfitTotal');
+    if (receivedEl) receivedEl.innerText = formatDisplayNumber(receivedTotal);
+    if (profitEl) profitEl.innerText = formatDisplayNumber(profitTotal);
 }
 
 async function handleFileUpload(event) {
@@ -900,6 +937,14 @@ function getDateOnly(dateTime) {
     return String(dateTime || '').slice(0, 10);
 }
 
+function parseDonHangDateTime(value) {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (!match) return 0;
+    const [, day, month, year, hour = '0', minute = '0'] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)).getTime();
+}
+
 function normalizeOrderStatus(orderStatus, returnStatus) {
     const value = `${orderStatus || ''} ${returnStatus || ''}`.toLocaleUpperCase('vi');
     if (value.includes('HỦY') || value.includes('HUỶ')) return 'HỦY';
@@ -923,7 +968,7 @@ function buildDonHangRows(rows) {
         row[DON_HANG_INDEX.ngay] = getDateOnly(row[DON_HANG_INDEX.ngay_h]);
         row[DON_HANG_INDEX.mdh] = String(getExcelCell(source, 'Mã đơn hàng') || '').trim();
         row[DON_HANG_INDEX.mvd] = String(getExcelCell(source, 'Mã vận đơn') || '').trim();
-        row[DON_HANG_INDEX.tong_tien] = parseMoney(getExcelCell(source, 'Tổng số tiền được người bán trợ giá'));
+        row[DON_HANG_INDEX.tong_tien] = parseMoney(getExcelCell(source, 'Tổng số tiền Người mua thanh toán'));
         row[DON_HANG_INDEX['Phí cố định']] = parseMoney(getExcelCell(source, 'Phí cố định'));
         row[DON_HANG_INDEX['Phí Dịch Vụ']] = parseMoney(getExcelCell(source, 'Phí Dịch Vụ'));
         row[DON_HANG_INDEX['Phí xử lý giao dịch']] = parseMoney(getExcelCell(source, 'Phí xử lý giao dịch'));
