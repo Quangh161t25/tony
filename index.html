@@ -47,6 +47,14 @@
                     <i data-lucide="shopping-cart" style="width:18px;"></i>
                     <span>ĐƠN HÀNG</span>
                 </div>
+                <div class="tab" data-tab="HOA_DON" onclick="switchTab('HOA_DON')">
+                    <i data-lucide="file-text" style="width:18px;"></i>
+                    <span>HÓA ĐƠN</span>
+                </div>
+                <div class="tab" data-tab="DS_SP" onclick="switchTab('DS_SP')">
+                    <i data-lucide="package" style="width:18px;"></i>
+                    <span>DS SP</span>
+                </div>
             </div>
         </aside>
 
@@ -72,6 +80,9 @@
                     </button>
                     <button id="addBtn" type="button" onclick="openRecordForm()">
                         <i data-lucide="plus" style="width:18px;"></i> Thêm mới
+                    </button>
+                    <button id="fillProductPriceBtn" type="button" onclick="fillVisibleOrderProductPrices()">
+                        <i data-lucide="badge-dollar-sign" style="width:18px;"></i> Điền giá sản phẩm
                     </button>
                     <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
                 </div>
@@ -156,6 +167,7 @@
         </div>
     </div>
     <datalist id="truongOptions"></datalist>
+    <datalist id="nccOptions"></datalist>
     <script src="app.js"></script>
 </body>
 

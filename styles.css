@@ -195,6 +195,7 @@
         }
 
         #addBtn,
+        #fillProductPriceBtn,
         .primary-btn {
             background: #0f766e;
             color: #fff;
@@ -207,6 +208,10 @@
             align-items: center;
             gap: 8px;
             white-space: nowrap;
+        }
+
+        #fillProductPriceBtn {
+            background: #0369a1;
         }
 
         .filter-input {

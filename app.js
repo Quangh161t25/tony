@@ -42,6 +42,16 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             headers: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai', 'SKU phân loại hàng', 'id_sp', 'slg', 'don_gia', 'thanh_tien'],
             displayHeaders: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai'],
             priceCols: [5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21, 22]
+        },
+        'HOA_DON': {
+            range: 'HOA_DON!A2:D',
+            headers: ['id', 'ngay', 'ncc', 'link_pdf'],
+            priceCols: []
+        },
+        'DS_SP': {
+            range: 'DS_SP!A2:G',
+            headers: ['id_sp_con', 'id_sp', 'ten_sp', 'gia_nhap', 'gia_ban', 'gia_đong_goi', 'gia_thap_nhat'],
+            priceCols: [3, 4, 5, 6]
         }
     }
 };
@@ -56,11 +66,14 @@ let editingDonHangRows = [];
 
 const TAB_LABELS = {
     THONG_TIN: 'THÔNG TIN',
-    DON_HANG: 'ĐƠN HÀNG'
+    DON_HANG: 'ĐƠN HÀNG',
+    HOA_DON: 'HÓA ĐƠN',
+    DS_SP: 'DS SP'
 };
 
 const ID_PREFIXES = {
-    THONG_TIN: 'TT'
+    THONG_TIN: 'TT',
+    HOA_DON: 'HD'
 };
 
 const DON_HANG_HEADERS = CONFIG.tabs.DON_HANG.headers;
@@ -90,6 +103,7 @@ async function switchTab(tabName) {
     document.getElementById('pageTitle').innerText = 'Hệ thống';
     const uploadBtn = document.getElementById('uploadBtn');
     const addBtn = document.getElementById('addBtn');
+    const fillProductPriceBtn = document.getElementById('fillProductPriceBtn');
     const truongFilter = document.getElementById('truongFilter');
     const storeFilter = document.getElementById('storeFilter');
     const orderFilters = document.getElementById('orderFilters');
@@ -101,6 +115,7 @@ async function switchTab(tabName) {
         lucide.createIcons();
     }
     if (addBtn) addBtn.style.display = 'flex';
+    if (fillProductPriceBtn) fillProductPriceBtn.style.display = isDonHangModule ? 'flex' : 'none';
     if (truongFilter) {
         truongFilter.style.display = isThongTinModule ? 'block' : 'none';
         lucide.createIcons();
@@ -131,6 +146,9 @@ async function reloadCurrentTab() {
     currentPage = 1;
     await fetchData();
     filterTable();
+    if (currentTab === 'DON_HANG') {
+        await recalculateVisibleDonHangRows();
+    }
 }
 
 async function fetchData() {
@@ -151,6 +169,9 @@ async function fetchData() {
         if (currentTab === 'DON_HANG') {
             filteredData.sort((a, b) => parseDonHangDateTime(b[DON_HANG_INDEX.ngay_h]) - parseDonHangDateTime(a[DON_HANG_INDEX.ngay_h]));
             updateDonHangSummary();
+        }
+        if (currentTab === 'HOA_DON') {
+            filteredData.sort((a, b) => parseHoaDonDate(b[1]) - parseHoaDonDate(a[1]));
         }
         populateFilters();
         renderHeaders();
@@ -288,6 +309,9 @@ function populateFilters() {
     setStoreFilterOptions(currentTab === 'DON_HANG'
         ? [...thongTinStoreNames, ...allData.map(row => String(row[DON_HANG_INDEX.gian_hang] || '').trim())]
         : thongTinStoreNames);
+    if (currentTab === 'HOA_DON') {
+        setDatalistOptions('nccOptions', allData.map(row => String(row[2] || '').trim()).filter(Boolean));
+    }
 }
 
 function resetFilters() {
@@ -337,6 +361,25 @@ async function writeRecordRow(row, sheetRow) {
     }
 }
 
+async function batchWriteRecordRows(items) {
+    if (!items.length) return;
+    const token = await getAccessToken();
+    const endCol = colName(getStorageHeaders().length - 1);
+    const data = items.map(item => ({
+        range: `${currentTab}!A${item.sheetRow}:${endCol}${item.sheetRow}`,
+        values: [normalizeRow(item.row)]
+    }));
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: 'RAW', data })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Cập nhật nhiều dòng thất bại.');
+    }
+}
+
 async function appendRecordRows(rows) {
     if (!rows.length) return;
     const token = await getAccessToken();
@@ -348,6 +391,19 @@ async function appendRecordRows(rows) {
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error?.message || 'Thêm dòng thất bại.');
+    }
+}
+
+async function clearCurrentTabData() {
+    const token = await getAccessToken();
+    const endCol = colName(getStorageHeaders().length - 1);
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/${currentTab}!A2:${endCol}:clear`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Xóa dữ liệu cũ thất bại.');
     }
 }
 
@@ -410,7 +466,13 @@ function getFormRowValue(row, header, idx) {
         if (currentTab === 'DON_HANG' && header === 'gian_hang') {
             return String(document.getElementById('storeFilter')?.value || '').trim();
         }
+        if (currentTab === 'HOA_DON' && header === 'ngay') {
+            return toDateInputValue(formatDateDdMmYyyy(new Date().toISOString().slice(0, 10)));
+        }
         return '';
+    }
+    if (currentTab === 'HOA_DON' && header === 'ngay') {
+        return toDateInputValue(row[idx]);
     }
     return row[idx] || '';
 }
@@ -464,7 +526,7 @@ function recalculateDonHangRows(rows) {
         const fixedFee = parseMoney(row[DON_HANG_INDEX['Phí cố định']]);
         const serviceFee = parseMoney(row[DON_HANG_INDEX['Phí Dịch Vụ']]);
         const transactionFee = parseMoney(row[DON_HANG_INDEX['Phí xử lý giao dịch']]);
-        const taxFee = roundMoney(total * 0.015);
+        const taxFee = roundMoney((total - shopDiscount) * 0.015);
         const pishipFee = 2700;
         const otherFee = parseMoney(row[DON_HANG_INDEX['phí khác']]);
         const productTotal = itemTotalsByOrder.get(getDonHangOrderKey(row)) || 0;
@@ -476,6 +538,100 @@ function recalculateDonHangRows(rows) {
         row[DON_HANG_INDEX.loi_nhuan] = roundMoney(received - otherFee - productTotal);
     });
     return rows;
+}
+
+function hasDonHangFormulaChanges(before, after) {
+    return ['phí thuế', 'phí piship', 'tien_thu_đc', 'tien_sp', 'loi_nhuan', 'thanh_tien']
+        .some(header => String(before[DON_HANG_INDEX[header]] ?? '').trim() !== String(after[DON_HANG_INDEX[header]] ?? '').trim());
+}
+
+async function recalculateVisibleDonHangRows() {
+    const visibleOrderIds = new Set(filteredData.map(row => getRowId(row, 'DON_HANG')).filter(Boolean));
+    const targets = allData.filter(row => visibleOrderIds.has(getRowId(row, 'DON_HANG')));
+    if (!targets.length) return;
+
+    const recalculatedRows = recalculateDonHangRows(targets.map(row => normalizeRow(row)));
+    const changedRows = recalculatedRows
+        .map((row, index) => ({ row, source: targets[index] }))
+        .filter(item => hasDonHangFormulaChanges(item.source, item.row));
+    if (!changedRows.length) return;
+
+    document.getElementById('loading').style.display = 'flex';
+    document.querySelector('#loading p').innerText = `Đang cập nhật lại công thức ${changedRows.length} dòng đơn hàng...`;
+    try {
+        for (const item of changedRows) {
+            await writeRecordRow(item.row, getDataSheetRow(item.source));
+        }
+        await fetchData();
+        filterTable();
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+
+async function fetchDsSpGiaBanMap() {
+    const token = await getAccessToken();
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/DS_SP!A2:G`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Không đọc được sheet DS_SP.');
+    }
+    const data = await res.json();
+    const map = new Map();
+    (data.values || []).forEach(row => {
+        const idSp = String(row[1] || '').trim().toUpperCase();
+        if (!idSp) return;
+        map.set(idSp, parseMoney(row[4]));
+    });
+    return map;
+}
+
+async function fillVisibleOrderProductPrices() {
+    if (currentTab !== 'DON_HANG') return;
+    if (!filteredData.length) {
+        alert('Không có đơn hàng đang hiển thị để điền giá.');
+        return;
+    }
+    if (!confirm(`Điền giá bán từ DS_SP cho ${filteredData.length} đơn hàng đang hiển thị?`)) return;
+
+    document.getElementById('loading').style.display = 'flex';
+    document.querySelector('#loading p').innerText = 'Đang điền giá sản phẩm từ DS_SP...';
+    try {
+        const priceMap = await fetchDsSpGiaBanMap();
+        const visibleOrderIds = new Set(filteredData.map(row => getRowId(row, 'DON_HANG')).filter(Boolean));
+        const targets = allData.filter(row => visibleOrderIds.has(getRowId(row, 'DON_HANG')));
+        let matched = 0;
+        let unmatched = 0;
+        const rowsWithPrice = targets.map(row => {
+            const nextRow = normalizeRow(row);
+            const idSp = String(nextRow[DON_HANG_INDEX.id_sp] || String(nextRow[DON_HANG_INDEX['SKU phân loại hàng']] || '').slice(0, 4)).trim().toUpperCase();
+            if (idSp && priceMap.has(idSp)) {
+                nextRow[DON_HANG_INDEX.id_sp] = idSp;
+                nextRow[DON_HANG_INDEX.don_gia] = priceMap.get(idSp);
+                matched += 1;
+            } else {
+                unmatched += 1;
+            }
+            return nextRow;
+        });
+        const recalculatedRows = recalculateDonHangRows(rowsWithPrice);
+        const changedRows = recalculatedRows
+            .map((row, index) => ({ row, source: targets[index] }))
+            .filter(item => String(item.source[DON_HANG_INDEX.don_gia] ?? '').trim() !== String(item.row[DON_HANG_INDEX.don_gia] ?? '').trim()
+                || hasDonHangFormulaChanges(item.source, item.row));
+
+        await batchWriteRecordRows(changedRows.map(item => ({ row: item.row, sheetRow: getDataSheetRow(item.source) })));
+        await fetchData();
+        filterTable();
+        alert(`Đã điền giá cho ${matched} dòng sản phẩm. Không tìm thấy giá: ${unmatched} dòng. Đã đồng bộ ${changedRows.length} dòng trên sheet.`);
+    } catch (err) {
+        console.error(err);
+        alert('Không điền được giá sản phẩm: ' + err.message);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
 }
 
 function getDonHangFieldOptions(header) {
@@ -519,6 +675,15 @@ function renderFormFields(row = null) {
 
         if (header === 'mail') {
             return `<label><span>EMAIL</span><input id="formField_${idx}" data-field="${header}" type="email" value="${value}"></label>`;
+        }
+
+        if (currentTab === 'HOA_DON') {
+            if (header === 'ngay') {
+                return `<label><span>NGÀY</span><input id="formField_${idx}" data-field="${header}" type="date" value="${value}"></label>`;
+            }
+            if (header === 'ncc') {
+                return `<label><span>NCC</span><input id="formField_${idx}" data-field="${header}" type="text" value="${value}" list="nccOptions" autocomplete="off"></label>`;
+            }
         }
 
         if (currentTab === 'DON_HANG') {
@@ -627,13 +792,15 @@ function recalculateDonHangDetail() {
     const taxFeeInput = document.querySelector(`[data-order-header="phí thuế"]`);
     const pishipFeeInput = document.querySelector(`[data-order-header="phí piship"]`);
     const receivedInput = document.querySelector(`[data-order-header="tien_thu_đc"]`);
+    const taxFee = roundMoney((parseMoney(totalInput?.value) - parseMoney(shopDiscountInput?.value)) * 0.015);
+    if (taxFeeInput) taxFeeInput.value = formatDisplayNumber(taxFee);
     const received = roundMoney(
         parseMoney(totalInput?.value)
         - parseMoney(shopDiscountInput?.value)
         - parseMoney(fixedFeeInput?.value)
         - parseMoney(serviceFeeInput?.value)
         - parseMoney(transactionFeeInput?.value)
-        - parseMoney(taxFeeInput?.value)
+        - taxFee
         - parseMoney(pishipFeeInput?.value)
     );
     if (receivedInput) receivedInput.value = formatDisplayNumber(received);
@@ -724,6 +891,9 @@ async function saveRecordFromForm(event) {
         row[DON_HANG_INDEX.ngay] = getDateOnly(row[DON_HANG_INDEX.ngay_h]);
         row[DON_HANG_INDEX.id_sp] = String(row[DON_HANG_INDEX['SKU phân loại hàng']] || '').slice(0, 4);
         row = recalculateDonHangRows([row])[0];
+    }
+    if (currentTab === 'HOA_DON') {
+        row[1] = formatDateDdMmYyyy(row[1]);
     }
     if (currentTab !== 'DON_HANG' && !row[0]) {
         row[0] = generateNextId();
@@ -883,6 +1053,9 @@ function filterTable() {
         filteredData.sort((a, b) => parseDonHangDateTime(b[DON_HANG_INDEX.ngay_h]) - parseDonHangDateTime(a[DON_HANG_INDEX.ngay_h]));
         updateDonHangSummary();
     }
+    if (currentTab === 'HOA_DON') {
+        filteredData.sort((a, b) => parseHoaDonDate(b[1]) - parseHoaDonDate(a[1]));
+    }
     currentPage = 1;
     renderTable();
 }
@@ -949,6 +1122,37 @@ function formatExcelDateTime(value) {
     const date = new Date(raw);
     if (Number.isNaN(date.getTime())) return raw;
     return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatDateDdMmYyyy(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+        const [day, month, year] = raw.split('/');
+        return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function toDateInputValue(value) {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return '';
+}
+
+function parseHoaDonDate(value) {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])).getTime();
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])).getTime();
+    return 0;
 }
 
 function getDateOnly(dateTime) {
@@ -1034,6 +1238,52 @@ function readDonHangExcelRows(file) {
     });
 }
 
+function buildDsSpRows(rows) {
+    return rows.map(source => {
+        const code = String(getExcelCell(source, 'Mã') || '').trim();
+        return [
+            code,
+            code.slice(0, 4),
+            String(getExcelCell(source, 'Tên') || '').trim(),
+            parseMoney(getExcelCell(source, 'Giá nhập')),
+            parseMoney(getExcelCell(source, 'Giá bán lẻ')),
+            parseMoney(getExcelCell(source, 'Giá đón gói')),
+            parseMoney(getExcelCell(source, 'Giá bán thấp nhất'))
+        ];
+    }).filter(row => row.some(cell => String(cell || '').trim()));
+}
+
+function readDsSpExcelRows(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                const headers = (matrix[0] || []).map(normalizeExcelHeader);
+                const requiredHeaders = ['Mã', 'Tên'];
+                const missingHeaders = requiredHeaders.filter(header => !headers.includes(normalizeExcelHeader(header)));
+                if (missingHeaders.length) {
+                    throw new Error(`File ${file.name} thiếu cột bắt buộc: ${missingHeaders.join(', ')}`);
+                }
+                const rows = matrix.slice(1).map(values => {
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        if (!(header in row)) row[header] = values[index] ?? '';
+                    });
+                    return row;
+                });
+                resolve(buildDsSpRows(rows));
+            } catch (err) {
+                reject(err);
+            }
+        };
+        reader.onerror = () => reject(new Error(`Không thể đọc file ${file.name}`));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 function truncateExcelNumericCellsInRow(row) {
     if (!Array.isArray(row)) return row;
     return row.map(cell => {
@@ -1056,14 +1306,21 @@ async function processFiles(files) {
     }
     const confirmMessage = currentTab === 'DON_HANG'
         ? `Dữ liệu từ ${excelFiles.length} file (${fileNames}) sẽ được đọc theo tên cột và cập nhật sheet '${currentTab}'. Tiếp tục?`
-        : `Dữ liệu từ ${excelFiles.length} file (${fileNames}) sẽ cập nhật sheet '${currentTab}' theo id. Id đã có sẽ cập nhật, id mới sẽ thêm dòng. Tiếp tục?`;
+        : currentTab === 'DS_SP'
+            ? `Dữ liệu từ ${excelFiles.length} file (${fileNames}) sẽ XÓA TOÀN BỘ dữ liệu cũ trong sheet '${currentTab}' rồi ghi dữ liệu mới. Tiếp tục?`
+            : `Dữ liệu từ ${excelFiles.length} file (${fileNames}) sẽ cập nhật sheet '${currentTab}' theo id. Id đã có sẽ cập nhật, id mới sẽ thêm dòng. Tiếp tục?`;
     if (!confirm(confirmMessage)) return;
 
     document.getElementById('loading').style.display = 'flex';
     document.querySelector('#loading p').innerText = `Đang xử lý ${excelFiles.length} file và cập nhật Google Sheets...`;
 
     try {
-        const rowsFromFiles = await Promise.all(excelFiles.map(currentTab === 'DON_HANG' ? readDonHangExcelRows : readExcelRows));
+        const reader = currentTab === 'DON_HANG'
+            ? readDonHangExcelRows
+            : currentTab === 'DS_SP'
+                ? readDsSpExcelRows
+                : readExcelRows;
+        const rowsFromFiles = await Promise.all(excelFiles.map(reader));
         const allRowsToUpload = rowsFromFiles
             .flat()
             .filter(r => Array.isArray(r) && r.some(c => String(c || '').trim() !== ''))
@@ -1073,9 +1330,18 @@ async function processFiles(files) {
             throw new Error("Không có dòng dữ liệu hợp lệ để tải lên.");
         }
 
-        const result = await upsertRecordRows(allRowsToUpload);
+        let result;
+        if (currentTab === 'DS_SP') {
+            await clearCurrentTabData();
+            await appendRecordRows(allRowsToUpload);
+            result = { updated: 0, inserted: allRowsToUpload.length, skipped: 0 };
+        } else {
+            result = await upsertRecordRows(allRowsToUpload);
+        }
         alert(currentTab === 'DON_HANG'
             ? `Đã thêm mới ${result.inserted} đơn hàng vào sheet '${currentTab}'. Bỏ qua ${result.skipped} dòng có mã đơn hàng trùng.`
+            : currentTab === 'DS_SP'
+                ? `Đã xóa dữ liệu cũ và ghi mới ${result.inserted} dòng vào sheet '${currentTab}'.`
             : `Đã cập nhật ${result.updated} dòng và thêm mới ${result.inserted} dòng vào sheet '${currentTab}'.`);
         try { sessionStorage.setItem(XNK_TT_TAB_STORAGE_KEY, currentTab); } catch (_) { }
         await fetchData();
