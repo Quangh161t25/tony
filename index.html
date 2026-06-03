@@ -89,6 +89,12 @@
                 <div id="orderFilters" class="order-filters">
                     <label><span>Từ ngày</span><input id="orderDateFrom" type="date" onchange="filterTable()"></label>
                     <label><span>Tới ngày</span><input id="orderDateTo" type="date" onchange="filterTable()"></label>
+                    <div class="quick-date-filters">
+                        <button type="button" onclick="setOrderQuickDateFilter('today')">Hôm nay</button>
+                        <button type="button" onclick="setOrderQuickDateFilter('yesterday')">Hôm qua</button>
+                        <button type="button" onclick="setOrderQuickDateFilter('week')">Tuần này</button>
+                        <button type="button" onclick="setOrderQuickDateFilter('month')">Tháng này</button>
+                    </div>
                     <input id="orderMdhFilter" type="text" placeholder="Lọc MDH..." oninput="filterTable()">
                     <input id="orderMvdFilter" type="text" placeholder="Lọc MVD..." oninput="filterTable()">
                     <select id="orderTinhTrangFilter" onchange="filterTable()">
@@ -103,7 +109,7 @@
                         <option value="HOÀN THÀNH">HOÀN THÀNH</option>
                     </select>
                     <div class="order-summary">
-                        <span>TIEN_THU_ĐC: <strong id="orderReceivedTotal">0</strong></span>
+                        <span>DOANH_THU: <strong id="orderReceivedTotal">0</strong></span>
                         <span>LOI_NHUAN: <strong id="orderProfitTotal">0</strong></span>
                     </div>
                 </div>

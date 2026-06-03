@@ -39,8 +39,8 @@ sR2Sh8e3h3Knd6j1tceRIFU=
         },
         'DON_HANG': {
             range: 'DON_HANG!A2:W',
-            headers: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai', 'SKU phân loại hàng', 'id_sp', 'slg', 'don_gia', 'thanh_tien'],
-            displayHeaders: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai'],
+            headers: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'doanh_thu', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai', 'SKU phân loại hàng', 'id_sp', 'slg', 'don_gia', 'thanh_tien'],
+            displayHeaders: ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'doanh_thu', 'phí khác', 'tien_sp', 'loi_nhuan', 'tinh_trang', 'trang_thai'],
             priceCols: [5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21, 22]
         },
         'HOA_DON': {
@@ -78,7 +78,7 @@ const ID_PREFIXES = {
 
 const DON_HANG_HEADERS = CONFIG.tabs.DON_HANG.headers;
 const DON_HANG_INDEX = Object.fromEntries(DON_HANG_HEADERS.map((header, index) => [header, index]));
-const DON_HANG_NUMERIC_HEADERS = new Set(['tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan', 'slg', 'don_gia', 'thanh_tien']);
+const DON_HANG_NUMERIC_HEADERS = new Set(['tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'doanh_thu', 'phí khác', 'tien_sp', 'loi_nhuan', 'slg', 'don_gia', 'thanh_tien']);
 
 async function getAccessToken() {
     if (accessToken && Date.now() < tokenExpiry - 300000) return accessToken;
@@ -531,17 +531,27 @@ function recalculateDonHangRows(rows) {
         const otherFee = parseMoney(row[DON_HANG_INDEX['phí khác']]);
         const productTotal = itemTotalsByOrder.get(getDonHangOrderKey(row)) || 0;
         const received = roundMoney(total - shopDiscount - fixedFee - serviceFee - transactionFee - taxFee - pishipFee);
+        const status = String(row[DON_HANG_INDEX.tinh_trang] || '').trim().toLocaleUpperCase('vi');
         row[DON_HANG_INDEX['phí thuế']] = taxFee;
         row[DON_HANG_INDEX['phí piship']] = pishipFee;
-        row[DON_HANG_INDEX['tien_thu_đc']] = received;
+        row[DON_HANG_INDEX.doanh_thu] = received;
         row[DON_HANG_INDEX.tien_sp] = productTotal || '';
-        row[DON_HANG_INDEX.loi_nhuan] = roundMoney(received - otherFee - productTotal);
+        if (status === 'HỦY') {
+            row[DON_HANG_INDEX.trang_thai] = 'HỦY';
+            row[DON_HANG_INDEX.loi_nhuan] = 0;
+        } else if (status === 'HOÀN' || status === 'TRẢ' || status === 'HOÀN TRẢ') {
+            row[DON_HANG_INDEX.trang_thai] = 'HỦY';
+            row[DON_HANG_INDEX.loi_nhuan] = pishipFee;
+        } else {
+            row[DON_HANG_INDEX.trang_thai] = 'HOÀN THÀNH';
+            row[DON_HANG_INDEX.loi_nhuan] = roundMoney(received - otherFee - productTotal);
+        }
     });
     return rows;
 }
 
 function hasDonHangFormulaChanges(before, after) {
-    return ['phí thuế', 'phí piship', 'tien_thu_đc', 'tien_sp', 'loi_nhuan', 'thanh_tien']
+    return ['phí thuế', 'phí piship', 'doanh_thu', 'tien_sp', 'loi_nhuan', 'thanh_tien']
         .some(header => String(before[DON_HANG_INDEX[header]] ?? '').trim() !== String(after[DON_HANG_INDEX[header]] ?? '').trim());
 }
 
@@ -636,7 +646,7 @@ async function fillVisibleOrderProductPrices() {
 
 function getDonHangFieldOptions(header) {
     if (header === 'gian_hang') return thongTinStoreNames;
-    if (header === 'tinh_trang') return ['HỦY', 'HOÀN TRẢ', 'HOÀN THÀNH'];
+    if (header === 'tinh_trang') return ['HỦY', 'HOÀN', 'TRẢ', 'HOÀN THÀNH'];
     if (header === 'trang_thai') return ['HỦY', 'HOÀN THÀNH'];
     return null;
 }
@@ -647,10 +657,29 @@ function recalculateDonHangForm() {
     row[DON_HANG_INDEX.ngay] = getDateOnly(row[DON_HANG_INDEX.ngay_h]);
     row[DON_HANG_INDEX.id_sp] = String(row[DON_HANG_INDEX['SKU phân loại hàng']] || '').slice(0, 4);
     recalculateDonHangRows([row]);
-    ['ngay', 'phí thuế', 'phí piship', 'tien_thu_đc', 'tien_sp', 'loi_nhuan', 'id_sp', 'thanh_tien'].forEach(header => {
+    ['ngay', 'phí thuế', 'phí piship', 'doanh_thu', 'tien_sp', 'loi_nhuan', 'trang_thai', 'id_sp', 'thanh_tien'].forEach(header => {
         const input = document.getElementById(`formField_${DON_HANG_INDEX[header]}`);
         if (input) input.value = row[DON_HANG_INDEX[header]];
     });
+}
+
+function renderOptionButtons(name, value, options, hiddenAttributes) {
+    return `<div class="option-buttons" data-option-group="${escapeHtml(name)}">
+        <input ${hiddenAttributes} type="hidden" value="${escapeHtml(value)}">
+        ${options.map(option => `<button type="button" class="${String(value) === option ? 'active' : ''}" onclick="setOptionButtonValue(this, '${escapeHtml(option)}')">${escapeHtml(option)}</button>`).join('')}
+    </div>`;
+}
+
+function setOptionButtonValue(button, value) {
+    const group = button.closest('.option-buttons');
+    if (!group) return;
+    const input = group.querySelector('input[type="hidden"]');
+    if (input) input.value = value;
+    group.querySelectorAll('button').forEach(item => item.classList.toggle('active', item === button));
+    if (currentTab === 'DON_HANG') {
+        recalculateDonHangForm();
+        recalculateDonHangDetail();
+    }
 }
 
 function renderFormFields(row = null) {
@@ -689,9 +718,12 @@ function renderFormFields(row = null) {
         if (currentTab === 'DON_HANG') {
             const options = getDonHangFieldOptions(header);
             if (options) {
+                if (header === 'tinh_trang') {
+                    return `<label><span>${header.toUpperCase()}</span>${renderOptionButtons(`form_${header}`, rawValue, options, `id="formField_${idx}" data-field="${escapeHtml(header)}"`)}</label>`;
+                }
                 return `<label><span>${header.toUpperCase()}</span><select id="formField_${idx}" data-field="${header}"><option value=""></option>${options.map(option => `<option value="${escapeHtml(option)}" ${String(rawValue) === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
             }
-            if (['ngay', 'phí thuế', 'phí piship', 'tien_thu_đc', 'tien_sp', 'loi_nhuan', 'id_sp', 'thanh_tien'].includes(header)) {
+            if (['ngay', 'phí thuế', 'phí piship', 'doanh_thu', 'tien_sp', 'loi_nhuan', 'id_sp', 'thanh_tien'].includes(header)) {
                 return `<label><span>${header.toUpperCase()}</span><input id="formField_${idx}" data-field="${header}" type="text" value="${value}" readonly></label>`;
             }
         }
@@ -728,7 +760,7 @@ function openDonHangDetail(orderId) {
     if (!rows.length) return;
 
     const generalHeaders = ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tinh_trang', 'trang_thai'];
-    const financeHeaders = ['tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'tien_thu_đc', 'phí khác', 'tien_sp', 'loi_nhuan'];
+    const financeHeaders = ['tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'doanh_thu', 'phí khác', 'tien_sp', 'loi_nhuan'];
     const itemHeaders = ['SKU phân loại hàng', 'id_sp', 'slg', 'don_gia', 'thanh_tien'];
     const firstRow = rows[0];
     editingDonHangRows = rows;
@@ -736,6 +768,9 @@ function openDonHangDetail(orderId) {
     const renderDetailInput = (header, value, extraAttributes = '') => {
         const options = getDonHangFieldOptions(header);
         if (options) {
+            if (header === 'tinh_trang') {
+                return renderOptionButtons(`detail_${header}`, value, options, `data-order-header="${escapeHtml(header)}"`);
+            }
             return `<select data-order-header="${escapeHtml(header)}">${options
                 .map(option => `<option value="${escapeHtml(option)}" ${String(value) === option ? 'selected' : ''}>${escapeHtml(option)}</option>`)
                 .join('')}</select>`;
@@ -791,7 +826,7 @@ function recalculateDonHangDetail() {
     const transactionFeeInput = document.querySelector(`[data-order-header="Phí xử lý giao dịch"]`);
     const taxFeeInput = document.querySelector(`[data-order-header="phí thuế"]`);
     const pishipFeeInput = document.querySelector(`[data-order-header="phí piship"]`);
-    const receivedInput = document.querySelector(`[data-order-header="tien_thu_đc"]`);
+    const receivedInput = document.querySelector(`[data-order-header="doanh_thu"]`);
     const taxFee = roundMoney((parseMoney(totalInput?.value) - parseMoney(shopDiscountInput?.value)) * 0.015);
     if (taxFeeInput) taxFeeInput.value = formatDisplayNumber(taxFee);
     const received = roundMoney(
@@ -817,8 +852,20 @@ function recalculateDonHangDetail() {
     if (productTotalInput) productTotalInput.value = formatDisplayNumber(productTotal);
     const otherFeeInput = document.querySelector(`[data-order-header="phí khác"]`);
     const profitInput = document.querySelector(`[data-order-header="loi_nhuan"]`);
+    const statusInput = document.querySelector(`[data-order-header="tinh_trang"]`);
+    const orderStatusInput = document.querySelector(`[data-order-header="trang_thai"]`);
+    const status = String(statusInput?.value || '').trim().toLocaleUpperCase('vi');
     if (profitInput) {
-        profitInput.value = formatDisplayNumber(parseMoney(receivedInput?.value) - parseMoney(otherFeeInput?.value) - productTotal);
+        if (status === 'HỦY') {
+            if (orderStatusInput) orderStatusInput.value = 'HỦY';
+            profitInput.value = formatDisplayNumber(0);
+        } else if (status === 'HOÀN' || status === 'TRẢ' || status === 'HOÀN TRẢ') {
+            if (orderStatusInput) orderStatusInput.value = 'HỦY';
+            profitInput.value = formatDisplayNumber(parseMoney(pishipFeeInput?.value));
+        } else {
+            if (orderStatusInput) orderStatusInput.value = 'HOÀN THÀNH';
+            profitInput.value = formatDisplayNumber(parseMoney(receivedInput?.value) - parseMoney(otherFeeInput?.value) - productTotal);
+        }
     }
 }
 
@@ -1060,8 +1107,34 @@ function filterTable() {
     renderTable();
 }
 
+function toIsoDateInput(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function setOrderQuickDateFilter(type) {
+    const today = new Date();
+    let start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    let end = new Date(start);
+    if (type === 'yesterday') {
+        start.setDate(start.getDate() - 1);
+        end = new Date(start);
+    } else if (type === 'week') {
+        const day = start.getDay() || 7;
+        start.setDate(start.getDate() - day + 1);
+        end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    } else if (type === 'month') {
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+        end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    }
+    const fromInput = document.getElementById('orderDateFrom');
+    const toInput = document.getElementById('orderDateTo');
+    if (fromInput) fromInput.value = toIsoDateInput(start);
+    if (toInput) toInput.value = toIsoDateInput(end);
+    filterTable();
+}
+
 function updateDonHangSummary() {
-    const receivedTotal = filteredData.reduce((sum, row) => sum + parseMoney(row[DON_HANG_INDEX['tien_thu_đc']]), 0);
+    const receivedTotal = filteredData.reduce((sum, row) => sum + parseMoney(row[DON_HANG_INDEX.doanh_thu]), 0);
     const profitTotal = filteredData.reduce((sum, row) => sum + parseMoney(row[DON_HANG_INDEX.loi_nhuan]), 0);
     const receivedEl = document.getElementById('orderReceivedTotal');
     const profitEl = document.getElementById('orderProfitTotal');
