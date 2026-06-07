@@ -63,6 +63,7 @@ let currentPage = 1, rowsPerPage = 150, filteredData = [];
 let sheetTitleToIdCache = null;
 let thongTinStoreNames = [];
 let editingDonHangRows = [];
+let dsSpNameMapCache = null;
 
 const TAB_LABELS = {
     THONG_TIN: 'THÔNG TIN',
@@ -213,6 +214,12 @@ function getDonHangSummaryRows(rows = allData) {
         if (!summaries.has(orderId)) summaries.set(orderId, row);
     });
     return [...summaries.values()];
+}
+
+function getDonHangItemCount(orderId) {
+    const key = String(orderId || '').trim();
+    if (!key) return 0;
+    return allData.filter(row => getRowId(row, 'DON_HANG') === key).length;
 }
 
 function colName(index) {
@@ -510,8 +517,15 @@ function getDonHangOrderKey(row) {
     ].map(value => String(value || '').trim()).join('::');
 }
 
-function recalculateDonHangRows(rows) {
+function recalculateDonHangRows(rows, options = {}) {
     const itemTotalsByOrder = new Map();
+    const orderTotalsByOrder = new Map();
+    if (options.aggregateTongTien) {
+        rows.forEach(row => {
+            const key = getDonHangOrderKey(row);
+            orderTotalsByOrder.set(key, roundMoney((orderTotalsByOrder.get(key) || 0) + parseMoney(row[DON_HANG_INDEX.tong_tien])));
+        });
+    }
     rows.forEach(row => {
         const quantity = parseMoney(row[DON_HANG_INDEX.slg]);
         const unitPrice = parseMoney(row[DON_HANG_INDEX.don_gia]);
@@ -521,6 +535,9 @@ function recalculateDonHangRows(rows) {
         itemTotalsByOrder.set(key, roundMoney((itemTotalsByOrder.get(key) || 0) + itemTotal));
     });
     rows.forEach(row => {
+        if (options.aggregateTongTien) {
+            row[DON_HANG_INDEX.tong_tien] = orderTotalsByOrder.get(getDonHangOrderKey(row)) || '';
+        }
         const total = parseMoney(row[DON_HANG_INDEX.tong_tien]);
         const shopDiscount = parseMoney(row[DON_HANG_INDEX['Mã giảm giá của Shop']]);
         const fixedFee = parseMoney(row[DON_HANG_INDEX['Phí cố định']]);
@@ -596,6 +613,26 @@ async function fetchDsSpGiaBanMap() {
         map.set(idSp, parseMoney(row[4]));
     });
     return map;
+}
+
+async function fetchDsSpNameMap() {
+    if (dsSpNameMapCache) return dsSpNameMapCache;
+    const token = await getAccessToken();
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/DS_SP!A2:G`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Không đọc được tên sản phẩm từ sheet DS_SP.');
+    }
+    const data = await res.json();
+    dsSpNameMapCache = new Map();
+    (data.values || []).forEach(row => {
+        const idSp = String(row[1] || '').trim().toUpperCase();
+        const name = String(row[2] || '').trim();
+        if (idSp) dsSpNameMapCache.set(idSp, name);
+    });
+    return dsSpNameMapCache;
 }
 
 async function fillVisibleOrderProductPrices() {
@@ -755,9 +792,15 @@ function closeProductForm() {
     document.getElementById('productModal').classList.remove('active');
 }
 
-function openDonHangDetail(orderId) {
+async function openDonHangDetail(orderId) {
     const rows = allData.filter(row => getRowId(row, 'DON_HANG') === String(orderId || '').trim());
     if (!rows.length) return;
+    let productNameMap = new Map();
+    try {
+        productNameMap = await fetchDsSpNameMap();
+    } catch (err) {
+        console.error(err);
+    }
 
     const generalHeaders = ['gian_hang', 'ngay', 'ngay_h', 'mdh', 'mvd', 'tinh_trang', 'trang_thai'];
     const financeHeaders = ['tong_tien', 'Mã giảm giá của Shop', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship', 'doanh_thu', 'phí khác', 'tien_sp', 'loi_nhuan'];
@@ -794,8 +837,19 @@ function openDonHangDetail(orderId) {
         + renderFieldsTable('THÔNG TIN TÀI CHÍNH', financeHeaders);
     document.getElementById('orderDetailFields').oninput = recalculateDonHangDetail;
     document.getElementById('orderDetailHead').innerHTML = `<tr>${itemHeaders.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join('')}</tr>`;
+    const renderItemInput = (row, rowIndex, header) => {
+        const value = DON_HANG_NUMERIC_HEADERS.has(header) ? formatDisplayNumber(row[DON_HANG_INDEX[header]]) : (row[DON_HANG_INDEX[header]] || '');
+        if (header === 'id_sp') {
+            const key = String(value || '').trim().toUpperCase();
+            return `<td><div class="product-id-cell">
+                <input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value="${escapeHtml(value)}">
+                <small data-product-name-row="${rowIndex}">${escapeHtml(productNameMap.get(key) || '')}</small>
+            </div></td>`;
+        }
+        return `<td><input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value="${escapeHtml(value)}"></td>`;
+    };
     document.getElementById('orderDetailBody').innerHTML = rows.map((row, rowIndex) => `<tr>${itemHeaders
-        .map(header => `<td><input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value="${escapeHtml(DON_HANG_NUMERIC_HEADERS.has(header) ? formatDisplayNumber(row[DON_HANG_INDEX[header]]) : (row[DON_HANG_INDEX[header]] || ''))}"></td>`)
+        .map(header => renderItemInput(row, rowIndex, header))
         .join('')}</tr>`).join('');
     document.getElementById('orderDetailBody').oninput = recalculateDonHangDetail;
     document.getElementById('orderDetailModal').onfocusout = formatDonHangDetailNumbers;
@@ -819,6 +873,7 @@ function formatDonHangDetailNumbers() {
 
 function recalculateDonHangDetail() {
     if (!editingDonHangRows.length) return;
+    refreshOrderProductNames();
     const totalInput = document.querySelector(`[data-order-header="tong_tien"]`);
     const shopDiscountInput = document.querySelector(`[data-order-header="Mã giảm giá của Shop"]`);
     const fixedFeeInput = document.querySelector(`[data-order-header="Phí cố định"]`);
@@ -869,6 +924,21 @@ function recalculateDonHangDetail() {
     }
 }
 
+function refreshOrderProductNames() {
+    if (!dsSpNameMapCache) return;
+    editingDonHangRows.forEach((_, rowIndex) => {
+        const idInput = document.querySelector(`[data-order-item-row="${rowIndex}"][data-order-item-header="id_sp"]`);
+        const skuInput = document.querySelector(`[data-order-item-row="${rowIndex}"][data-order-item-header="SKU phân loại hàng"]`);
+        const nameEl = document.querySelector(`[data-product-name-row="${rowIndex}"]`);
+        if (!idInput || !nameEl) return;
+        if (!String(idInput.value || '').trim() && skuInput?.value) {
+            idInput.value = String(skuInput.value || '').slice(0, 4).toUpperCase();
+        }
+        const key = String(idInput.value || '').trim().toUpperCase();
+        nameEl.innerText = dsSpNameMapCache.get(key) || '';
+    });
+}
+
 function addDonHangItem() {
     if (!editingDonHangRows.length) return;
     const firstRow = normalizeRow(editingDonHangRows[0]);
@@ -880,7 +950,9 @@ function addDonHangItem() {
     const rowIndex = editingDonHangRows.length - 1;
     const itemHeaders = ['SKU phân loại hàng', 'id_sp', 'slg', 'don_gia', 'thanh_tien'];
     document.getElementById('orderDetailBody').insertAdjacentHTML('beforeend', `<tr>${itemHeaders
-        .map(header => `<td><input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value=""></td>`)
+        .map(header => header === 'id_sp'
+            ? `<td><div class="product-id-cell"><input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value=""><small data-product-name-row="${rowIndex}"></small></div></td>`
+            : `<td><input data-order-item-row="${rowIndex}" data-order-item-header="${escapeHtml(header)}" type="text" value=""></td>`)
         .join('')}</tr>`);
     lucide.createIcons();
 }
@@ -1026,7 +1098,12 @@ function renderTable() {
             const displayCell = currentTab === 'DON_HANG' && DON_HANG_NUMERIC_HEADERS.has(header)
                 ? formatDisplayNumber(cell)
                 : cell;
-            return `<td>${escapeHtml(displayCell || '')}</td>`;
+            const cellClass = currentTab === 'DON_HANG'
+                && header === 'ngay_h'
+                && getDonHangItemCount(getRowId(row, 'DON_HANG')) >= 2
+                ? ' class="multi-item-date"'
+                : '';
+            return `<td${cellClass}>${escapeHtml(displayCell || '')}</td>`;
         }).join('');
 
         const editAction = currentTab === 'DON_HANG'
@@ -1277,7 +1354,7 @@ function buildDonHangRows(rows) {
         return row;
     }).filter(row => row[DON_HANG_INDEX.mdh]);
 
-    return recalculateDonHangRows(mappedRows);
+    return recalculateDonHangRows(mappedRows, { aggregateTongTien: true });
 }
 
 function readDonHangExcelRows(file) {

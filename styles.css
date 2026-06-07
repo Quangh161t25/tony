@@ -304,6 +304,12 @@
             border-bottom: 1px solid var(--border);
         }
 
+        td.multi-item-date {
+            font-weight: 900;
+            color: #0f172a;
+            background: #fef3c7;
+        }
+
         tr:hover {
             background: #f8fafc;
         }
@@ -700,6 +706,18 @@
         .order-items-wrapper input:focus {
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .product-id-cell {
+            display: grid;
+            gap: 4px;
+        }
+
+        .product-id-cell small {
+            color: #64748b;
+            font-size: 0.74rem;
+            line-height: 1.25;
+            white-space: normal;
         }
 
         .option-buttons {
