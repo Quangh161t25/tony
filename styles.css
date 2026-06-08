@@ -147,6 +147,29 @@
             background: #eef2ff;
         }
 
+        .profit-filter-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .profit-filter-buttons button {
+            border: 1px solid var(--border);
+            background: #fff;
+            color: #475569;
+            border-radius: 8px;
+            padding: 9px 10px;
+            cursor: pointer;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .profit-filter-buttons button.active {
+            background: #0f766e;
+            border-color: #0f766e;
+            color: #fff;
+        }
+
         h1 {
             font-size: 1.5rem;
             font-weight: 800;
@@ -220,6 +243,7 @@
 
         #addBtn,
         #fillProductPriceBtn,
+        #deleteOrderBtn,
         .primary-btn {
             background: #0f766e;
             color: #fff;
@@ -236,6 +260,10 @@
 
         #fillProductPriceBtn {
             background: #0369a1;
+        }
+
+        #deleteOrderBtn {
+            background: #b91c1c;
         }
 
         .filter-input {
@@ -308,6 +336,51 @@
             font-weight: 900;
             color: #0f172a;
             background: #fef3c7;
+        }
+
+        td.return-status-cancel {
+            background: #064e3b;
+            color: #fff;
+            font-weight: 900;
+        }
+
+        td.return-status-refund {
+            background: #f97316;
+            color: #fff;
+            font-weight: 900;
+        }
+
+        td.return-status-return {
+            background: #ff1744;
+            color: #fff;
+            font-weight: 900;
+        }
+
+        .cost-toggle-header,
+        .cost-toggle-cell {
+            background: #ecfeff;
+            color: #0e7490;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .cost-toggle-cell:hover {
+            background: #cffafe;
+        }
+
+        th.select-col,
+        td.select-col {
+            width: 44px;
+            min-width: 44px;
+            text-align: center;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        .select-col input {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
         }
 
         tr:hover {

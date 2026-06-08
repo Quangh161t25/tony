@@ -55,6 +55,10 @@
                     <i data-lucide="package" style="width:18px;"></i>
                     <span>DS SP</span>
                 </div>
+                <div class="tab" data-tab="DH_HOAN" onclick="switchTab('DH_HOAN')">
+                    <i data-lucide="undo-2" style="width:18px;"></i>
+                    <span>ĐƠN TRẢ</span>
+                </div>
             </div>
         </aside>
 
@@ -84,6 +88,9 @@
                     <button id="fillProductPriceBtn" type="button" onclick="fillVisibleOrderProductPrices()">
                         <i data-lucide="badge-dollar-sign" style="width:18px;"></i> Điền giá sản phẩm
                     </button>
+                    <button id="deleteOrderBtn" type="button" onclick="deleteSelectedOrders()">
+                        <i data-lucide="trash-2" style="width:18px;"></i> Xóa đơn hàng
+                    </button>
                     <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
                 </div>
                 <div id="orderFilters" class="order-filters">
@@ -108,10 +115,29 @@
                         <option value="HỦY">HỦY</option>
                         <option value="HOÀN THÀNH">HOÀN THÀNH</option>
                     </select>
+                    <input id="orderProfitFilter" type="hidden" value="">
+                    <div class="profit-filter-buttons">
+                        <button type="button" data-profit-filter="negative" onclick="toggleOrderProfitFilter('negative')">Lợi nhuận âm</button>
+                        <button type="button" data-profit-filter="positive" onclick="toggleOrderProfitFilter('positive')">Lợi nhuận +</button>
+                    </div>
                     <div class="order-summary">
                         <span>DOANH_THU: <strong id="orderReceivedTotal">0</strong></span>
                         <span>LOI_NHUAN: <strong id="orderProfitTotal">0</strong></span>
                     </div>
+                </div>
+                <div id="returnOrderControls" class="order-filters">
+                    <select id="returnStoreSelect" onchange="filterTable()">
+                        <option value="">Chọn gian...</option>
+                    </select>
+                    <select id="returnStatusSelect" onchange="filterTable()">
+                        <option value="">Chọn tình trạng...</option>
+                        <option value="HỦY">HỦY</option>
+                        <option value="HOÀN">HOÀN</option>
+                        <option value="TRẢ">TRẢ</option>
+                        <option value="HOÀN TRẢ">HOÀN TRẢ</option>
+                    </select>
+                    <label><span>Từ ngày</span><input id="returnDateFrom" type="date" onchange="filterTable()"></label>
+                    <label><span>Tới ngày</span><input id="returnDateTo" type="date" onchange="filterTable()"></label>
                 </div>
             </div>
 
@@ -174,7 +200,7 @@
     </div>
     <datalist id="truongOptions"></datalist>
     <datalist id="nccOptions"></datalist>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260608"></script>
 </body>
 
 </html>
