@@ -9,7 +9,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260611">
 </head>
 
 <body>
@@ -58,6 +58,14 @@
                 <div class="tab" data-tab="DH_HOAN" onclick="switchTab('DH_HOAN')">
                     <i data-lucide="undo-2" style="width:18px;"></i>
                     <span>ĐƠN TRẢ</span>
+                </div>
+                <div class="tab" data-tab="NHAP_XUAT" onclick="switchTab('NHAP_XUAT')">
+                    <i data-lucide="arrow-left-right" style="width:18px;"></i>
+                    <span>NHẬP XUẤT</span>
+                </div>
+                <div class="tab" data-tab="TON_KHO" onclick="switchTab('TON_KHO')">
+                    <i data-lucide="warehouse" style="width:18px;"></i>
+                    <span>TỒN KHO</span>
                 </div>
             </div>
         </aside>
@@ -200,7 +208,7 @@
     </div>
     <datalist id="truongOptions"></datalist>
     <datalist id="nccOptions"></datalist>
-    <script src="app.js?v=20260608"></script>
+    <script src="app.js?v=20260611"></script>
 </body>
 
 </html>

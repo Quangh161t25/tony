@@ -356,6 +356,12 @@
             font-weight: 900;
         }
 
+        td.return-status-mvd-other-store {
+            background: #7e22ce;
+            color: #fff;
+            font-weight: 900;
+        }
+
         .cost-toggle-header,
         .cost-toggle-cell {
             background: #ecfeff;
@@ -814,6 +820,58 @@
             background: var(--primary);
             border-color: var(--primary);
             color: #fff;
+        }
+
+        .form-section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .form-table-section {
+            display: grid;
+            gap: 8px;
+        }
+
+        .form-table-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .form-edit-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .form-edit-table th,
+        .form-edit-table td {
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .form-edit-table th {
+            background: #f1f5f9;
+            font-size: 0.78rem;
+        }
+
+        .form-edit-table select,
+        .form-edit-table input {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            font: inherit;
+        }
+
+        .compact-btn {
+            padding: 7px 10px;
+            white-space: nowrap;
         }
 
         .order-items-wrapper {

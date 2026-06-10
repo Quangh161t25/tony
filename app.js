@@ -57,6 +57,16 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             range: 'DH_HOAN!A2:J',
             headers: ['gian', 'tinh_trang', 'ngay', 'mdh', 'mvd', 'ly_do', 'mdh_tra', 'mvd_tra', 'ghi_chu', 'trang_thai'],
             priceCols: []
+        },
+        'NHAP_XUAT': {
+            range: 'NHAP_XUAT!A2:F',
+            headers: ['id', 'ngay', 'truong', 'gian', 'id_sp', 'slg'],
+            priceCols: [5]
+        },
+        'TON_KHO': {
+            range: 'TON_KHO!A2:D',
+            headers: ['id', 'gian', 'id_sp', 'ton_dau'],
+            priceCols: [3]
         }
     }
 };
@@ -71,18 +81,23 @@ let editingDonHangRows = [];
 let dsSpNameMapCache = null;
 let selectedOrderIds = new Set();
 let orderCostDetailsExpanded = false;
+let dsSpOptionsCache = null;
 
 const TAB_LABELS = {
     THONG_TIN: 'THÔNG TIN',
     DON_HANG: 'ĐƠN HÀNG',
     HOA_DON: 'HÓA ĐƠN',
     DS_SP: 'DS SP',
-    DH_HOAN: 'ĐƠN TRẢ'
+    DH_HOAN: 'ĐƠN TRẢ',
+    NHAP_XUAT: 'NHẬP XUẤT',
+    TON_KHO: 'TỒN KHO'
 };
 
 const ID_PREFIXES = {
     THONG_TIN: 'TT',
-    HOA_DON: 'HD'
+    HOA_DON: 'HD',
+    NHAP_XUAT: 'NX',
+    TON_KHO: 'TK'
 };
 
 const DON_HANG_HEADERS = CONFIG.tabs.DON_HANG.headers;
@@ -91,6 +106,7 @@ const DON_HANG_NUMERIC_HEADERS = new Set(['tong_tien', 'Mã giảm giá', 'Phí 
 const DON_HANG_COST_DETAIL_HEADERS = ['Mã giảm giá', 'Phí cố định', 'Phí Dịch Vụ', 'Phí xử lý giao dịch', 'phí thuế', 'phí piship'];
 let selectedReturnOrderIds = new Set();
 let returnStatusByOrderCache = null;
+let returnStatusByMvdCache = null;
 
 async function getAccessToken() {
     if (accessToken && Date.now() < tokenExpiry - 300000) return accessToken;
@@ -124,6 +140,7 @@ async function switchTab(tabName) {
     const isThongTinModule = currentTab === 'THONG_TIN';
     const isDonHangModule = currentTab === 'DON_HANG';
     const isReturnOrderModule = currentTab === 'DH_HOAN';
+    const isStoreDataModule = currentTab === 'NHAP_XUAT' || currentTab === 'TON_KHO';
     if (uploadBtn) {
         uploadBtn.innerHTML = `<i data-lucide="upload" style="width:18px;"></i> ${isDonHangModule || isReturnOrderModule ? 'Thêm từ Excel' : `Tải ${currentTab} Lên`}`;
         uploadBtn.style.display = 'flex';
@@ -153,7 +170,7 @@ async function switchTab(tabName) {
     selectedReturnOrderIds.clear();
     resetFilters();
     currentPage = 1;
-    if (isDonHangModule || isReturnOrderModule) await fetchThongTinStoreNames();
+    if (isDonHangModule || isReturnOrderModule || isStoreDataModule) await fetchThongTinStoreNames();
     if (isReturnOrderModule) setReturnStoreOptions();
     await fetchData();
 }
@@ -241,6 +258,12 @@ function getDisplayHeaders(tabName = currentTab) {
     return headers;
 }
 
+function isNumericDisplayHeader(header, tabName = currentTab) {
+    if (tabName === 'DON_HANG') return DON_HANG_NUMERIC_HEADERS.has(header);
+    const storageIndex = getStorageHeaders(tabName).indexOf(header);
+    return storageIndex >= 0 && (CONFIG.tabs[tabName]?.priceCols || []).includes(storageIndex);
+}
+
 function getDonHangCostTotal(row) {
     return DON_HANG_COST_DETAIL_HEADERS.reduce((sum, header) => sum + parseMoney(row?.[DON_HANG_INDEX[header]]), 0);
 }
@@ -297,6 +320,15 @@ function getMatchedReturnStatusForOrder(row) {
     const store = String(row?.[DON_HANG_INDEX.gian_hang] || '').trim().toLowerCase();
     const orderId = String(row?.[DON_HANG_INDEX.mdh] || '').trim();
     return returnStatusByOrderCache.get(`${store}::${orderId}`) || '';
+}
+
+function getMvdDifferentStoreReturnStatusForOrder(row) {
+    if (!returnStatusByMvdCache || currentTab !== 'DON_HANG') return '';
+    const store = String(row?.[DON_HANG_INDEX.gian_hang] || '').trim().toLowerCase();
+    const mvd = String(row?.[DON_HANG_INDEX.mvd] || '').trim();
+    if (!store || !mvd) return '';
+    const matches = returnStatusByMvdCache.get(mvd) || [];
+    return matches.find(item => item.store && item.store !== store)?.status || '';
 }
 
 function getReturnStatusClass(status) {
@@ -629,12 +661,12 @@ function getFormRowValue(row, header, idx) {
         if (currentTab === 'DON_HANG' && header === 'gian_hang') {
             return String(document.getElementById('storeFilter')?.value || '').trim();
         }
-        if (currentTab === 'HOA_DON' && header === 'ngay') {
+        if ((currentTab === 'HOA_DON' || currentTab === 'NHAP_XUAT') && header === 'ngay') {
             return toDateInputValue(formatDateDdMmYyyy(new Date().toISOString().slice(0, 10)));
         }
         return '';
     }
-    if (currentTab === 'HOA_DON' && header === 'ngay') {
+    if ((currentTab === 'HOA_DON' || currentTab === 'NHAP_XUAT') && header === 'ngay') {
         return toDateInputValue(row[idx]);
     }
     return row[idx] || '';
@@ -791,6 +823,28 @@ async function fetchDsSpNameMap() {
     return dsSpNameMapCache;
 }
 
+async function fetchDsSpOptions() {
+    if (dsSpOptionsCache) return dsSpOptionsCache;
+    const token = await getAccessToken();
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/DS_SP!A2:G`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Không đọc được danh sách sản phẩm từ sheet DS_SP.');
+    }
+    const data = await res.json();
+    const seen = new Set();
+    dsSpOptionsCache = [];
+    (data.values || []).forEach(row => {
+        const idSp = String(row[1] || '').trim().toUpperCase();
+        if (!idSp || seen.has(idSp)) return;
+        seen.add(idSp);
+        dsSpOptionsCache.push({ id: idSp, name: String(row[2] || '').trim() });
+    });
+    return dsSpOptionsCache;
+}
+
 async function fetchReturnStatusByOrderMap(force = false) {
     if (returnStatusByOrderCache && !force) return returnStatusByOrderCache;
     const token = await getAccessToken();
@@ -803,11 +857,18 @@ async function fetchReturnStatusByOrderMap(force = false) {
     }
     const data = await res.json();
     returnStatusByOrderCache = new Map();
+    returnStatusByMvdCache = new Map();
     (data.values || []).forEach(row => {
         const store = String(row[0] || '').trim().toLowerCase();
         const status = String(row[1] || '').trim().toLocaleUpperCase('vi');
         const orderId = String(row[3] || '').trim();
+        const mvd = String(row[4] || '').trim();
         if (store && orderId && status) returnStatusByOrderCache.set(`${store}::${orderId}`, status);
+        if (store && mvd && status) {
+            const matches = returnStatusByMvdCache.get(mvd) || [];
+            matches.push({ store, status });
+            returnStatusByMvdCache.set(mvd, matches);
+        }
     });
     return returnStatusByOrderCache;
 }
@@ -960,8 +1021,76 @@ function setOptionButtonValue(button, value) {
     }
 }
 
+function renderNhapXuatProductSelect(value = '') {
+    const selectedValue = String(value || '').trim().toUpperCase();
+    const options = dsSpOptionsCache || [];
+    return `<select data-nhap-xuat-item-field="id_sp">
+        <option value=""></option>
+        ${options.map(item => {
+            const label = item.name ? `${item.id} - ${item.name}` : item.id;
+            return `<option value="${escapeHtml(item.id)}" ${selectedValue === item.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('')}
+    </select>`;
+}
+
+function renderNhapXuatItemRow(item = {}) {
+    return `<tr>
+        <td>${renderNhapXuatProductSelect(item.id_sp)}</td>
+        <td><input data-nhap-xuat-item-field="slg" type="number" min="0" step="1" value="${escapeHtml(item.slg || '')}"></td>
+        <td><button type="button" class="secondary-btn compact-btn" onclick="removeNhapXuatItemRow(this)">Xóa</button></td>
+    </tr>`;
+}
+
+function renderNhapXuatForm(row = null) {
+    const container = document.getElementById('formFields');
+    const idValue = row ? row[0] : generateNextId();
+    const dateValue = getFormRowValue(row, 'ngay', 1);
+    const fieldValue = row ? String(row[2] || '').trim() : 'NHẬP';
+    const storeValue = row ? String(row[3] || '').trim() : '';
+    const items = row
+        ? [{ id_sp: row[4] || '', slg: row[5] || '' }]
+        : [{ id_sp: '', slg: '' }];
+    container.innerHTML = `
+        <input id="formField_0" data-field="id" type="hidden" value="${escapeHtml(idValue)}">
+        <div class="form-section-grid">
+            <label><span>NGÀY</span><input id="formField_1" data-field="ngay" type="date" value="${escapeHtml(dateValue)}"></label>
+            <label><span>TRƯỜNG</span>${renderOptionButtons('nhap_xuat_truong', fieldValue, ['NHẬP', 'XUẤT'], 'id="formField_2" data-field="truong"')}</label>
+            <label><span>GIAN</span><select id="formField_3" data-field="gian"><option value=""></option>${thongTinStoreNames.map(option => `<option value="${escapeHtml(option)}" ${storeValue === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>
+        </div>
+        <div class="form-table-section">
+            <div class="form-table-title">
+                <strong>SẢN PHẨM</strong>
+                ${row ? '' : '<button type="button" class="secondary-btn compact-btn" onclick="addNhapXuatItemRow()">+ Thêm sản phẩm</button>'}
+            </div>
+            <table class="form-edit-table">
+                <thead><tr><th>ID_SP</th><th>SLG</th><th></th></tr></thead>
+                <tbody id="nhapXuatItemsBody">${items.map(renderNhapXuatItemRow).join('')}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+function addNhapXuatItemRow() {
+    document.getElementById('nhapXuatItemsBody')?.insertAdjacentHTML('beforeend', renderNhapXuatItemRow());
+}
+
+function removeNhapXuatItemRow(button) {
+    const body = document.getElementById('nhapXuatItemsBody');
+    const rows = body ? [...body.querySelectorAll('tr')] : [];
+    if (rows.length <= 1) {
+        const row = button.closest('tr');
+        row?.querySelectorAll('select,input').forEach(input => { input.value = ''; });
+        return;
+    }
+    button.closest('tr')?.remove();
+}
+
 function renderFormFields(row = null) {
     const container = document.getElementById('formFields');
+    if (currentTab === 'NHAP_XUAT') {
+        renderNhapXuatForm(row);
+        return;
+    }
     const headers = getStorageHeaders();
     container.innerHTML = headers.map((header, idx) => {
         const rawValue = getFormRowValue(row, header, idx);
@@ -993,6 +1122,18 @@ function renderFormFields(row = null) {
             }
         }
 
+        if (currentTab === 'NHAP_XUAT' || currentTab === 'TON_KHO') {
+            if (header === 'ngay') {
+                return `<label><span>NGÀY</span><input id="formField_${idx}" data-field="${header}" type="date" value="${value}"></label>`;
+            }
+            if (header === 'gian') {
+                return `<label><span>GIAN</span><select id="formField_${idx}" data-field="${header}"><option value=""></option>${thongTinStoreNames.map(option => `<option value="${escapeHtml(option)}" ${String(rawValue) === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
+            }
+            if (header === 'slg' || header === 'ton_dau') {
+                return `<label><span>${header.toUpperCase()}</span><input id="formField_${idx}" data-field="${header}" type="text" inputmode="decimal" value="${value}"></label>`;
+            }
+        }
+
         if (currentTab === 'DON_HANG') {
             const options = getDonHangFieldOptions(header);
             if (options) {
@@ -1016,6 +1157,15 @@ async function openRecordForm(rowIndex = null) {
     const row = rowIndex === null ? null : filteredData[rowIndex];
     
     document.getElementById('editingSheetRow').value = row ? getDataSheetRow(row) : '';
+    if (currentTab === 'NHAP_XUAT') {
+        try {
+            await fetchDsSpOptions();
+        } catch (err) {
+            console.error(err);
+            alert(err.message);
+            return;
+        }
+    }
     renderFormFields(row);
     if (currentTab === 'DON_HANG') {
         document.getElementById('formFields').oninput = recalculateDonHangForm;
@@ -1246,6 +1396,49 @@ async function saveDonHangDetail() {
 async function saveRecordFromForm(event) {
     event.preventDefault();
     const headers = getStorageHeaders();
+    const editingSheetRow = Number(document.getElementById('editingSheetRow').value);
+    if (currentTab === 'NHAP_XUAT') {
+        try {
+            const baseId = document.getElementById('formField_0')?.value.trim() || generateNextId();
+            const ngay = formatDateDdMmYyyy(document.getElementById('formField_1')?.value.trim() || '');
+            const truong = document.getElementById('formField_2')?.value.trim() || '';
+            const gian = document.getElementById('formField_3')?.value.trim() || '';
+            const itemRows = [...document.querySelectorAll('#nhapXuatItemsBody tr')]
+                .map((tr, index) => {
+                    const idSp = tr.querySelector('[data-nhap-xuat-item-field="id_sp"]')?.value.trim() || '';
+                    const slg = parseMoney(tr.querySelector('[data-nhap-xuat-item-field="slg"]')?.value || '');
+                    return { idSp, slg, index };
+                })
+                .filter(item => item.idSp || item.slg);
+            if (!ngay || !truong || !gian) throw new Error('Vui lòng nhập đủ ngày, trường và gian.');
+            if (!itemRows.length) throw new Error('Vui lòng thêm ít nhất một sản phẩm.');
+            if (itemRows.some(item => !item.idSp || !item.slg)) throw new Error('Mỗi dòng sản phẩm phải có đủ ID_SP và SLG.');
+            const rows = itemRows.map((item, index) => [
+                editingSheetRow ? baseId : (index === 0 ? baseId : `${baseId}-${index + 1}`),
+                ngay,
+                truong,
+                gian,
+                item.idSp,
+                item.slg
+            ]);
+            document.getElementById('loading').style.display = 'flex';
+            document.querySelector('#loading p').innerText = `Đang lưu dữ liệu...`;
+            if (editingSheetRow) {
+                await writeRecordRow(rows[0], editingSheetRow);
+            } else {
+                await appendRecordRows(rows);
+            }
+            closeProductForm();
+            await fetchData();
+            filterTable();
+        } catch (err) {
+            console.error(err);
+            alert(`Không lưu được dữ liệu: ` + err.message);
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+        }
+        return;
+    }
     let row = headers.map((_, idx) => document.getElementById(`formField_${idx}`)?.value.trim() || '');
     if (currentTab === 'DON_HANG') {
         row[DON_HANG_INDEX.ngay] = getDateOnly(row[DON_HANG_INDEX.ngay_h]);
@@ -1255,6 +1448,13 @@ async function saveRecordFromForm(event) {
     if (currentTab === 'HOA_DON') {
         row[1] = formatDateDdMmYyyy(row[1]);
     }
+    if (currentTab === 'NHAP_XUAT') {
+        row[1] = formatDateDdMmYyyy(row[1]);
+        row[5] = parseMoney(row[5]);
+    }
+    if (currentTab === 'TON_KHO') {
+        row[3] = parseMoney(row[3]);
+    }
     if (currentTab !== 'DON_HANG' && !row[0]) {
         row[0] = generateNextId();
     }
@@ -1262,7 +1462,6 @@ async function saveRecordFromForm(event) {
     document.getElementById('loading').style.display = 'flex';
     document.querySelector('#loading p').innerText = `Đang lưu dữ liệu...`;
     try {
-        const editingSheetRow = Number(document.getElementById('editingSheetRow').value);
         const existing = currentTab === 'DON_HANG'
             ? allData.find(item => getRowId(item) === getRowId(row))
             : getRowById(row[0]);
@@ -1339,11 +1538,14 @@ function renderTable() {
                 const linksHtml = parts.map((l, i) => `<a href="${l.trim()}" target="_blank" style="color: var(--primary); font-weight: 600; text-decoration: none;">Link ${parts.length > 1 ? i + 1 : ''}</a>`.trim());
                 return `<td>${linksHtml.join(', ')}</td>`;
             }
-            const displayCell = currentTab === 'DON_HANG' && DON_HANG_NUMERIC_HEADERS.has(header)
+            const displayCell = isNumericDisplayHeader(header)
                 ? formatDisplayNumber(cell)
                 : cell;
             const matchedReturnStatus = currentTab === 'DON_HANG' && header === 'tinh_trang'
                 ? getMatchedReturnStatusForOrder(row)
+                : '';
+            const mvdDifferentStoreReturnStatus = currentTab === 'DON_HANG' && header === 'tinh_trang' && !matchedReturnStatus
+                ? getMvdDifferentStoreReturnStatusForOrder(row)
                 : '';
             const displayValue = displayCell;
             const classNames = [];
@@ -1352,7 +1554,9 @@ function renderTable() {
                 && getDonHangItemCount(getRowId(row, 'DON_HANG')) >= 2) {
                 classNames.push('multi-item-date');
             }
-            const returnStatusClass = getReturnStatusClass(matchedReturnStatus);
+            const returnStatusClass = matchedReturnStatus
+                ? getReturnStatusClass(matchedReturnStatus)
+                : (mvdDifferentStoreReturnStatus ? 'return-status-mvd-other-store' : '');
             if (returnStatusClass) classNames.push(returnStatusClass);
             const cellClass = classNames.length ? ` class="${classNames.join(' ')}"` : '';
             return `<td${cellClass}>${escapeHtml(displayValue || '')}</td>`;
@@ -1534,6 +1738,62 @@ function readExcelRows(file) {
                     rows = rows.slice(1);
                 }
                 resolve(rows);
+            } catch (err) {
+                reject(err);
+            }
+        };
+        reader.onerror = () => reject(new Error(`Không thể đọc file ${file.name}`));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function getHeaderMappedCell(source, header) {
+    const aliases = {
+        id: ['id'],
+        ngay: ['ngay', 'ngày'],
+        truong: ['truong', 'trường'],
+        gian: ['gian', 'gian_hang', 'gian hàng'],
+        id_sp: ['id_sp', 'id sp', 'mã sp', 'ma sp'],
+        slg: ['slg', 'số lượng', 'so luong'],
+        ton_dau: ['ton_dau', 'tồn đầu', 'ton dau']
+    };
+    const keys = aliases[header] || [header];
+    for (const key of keys) {
+        const value = source[normalizeExcelHeader(key)];
+        if (value !== undefined) return value;
+    }
+    return '';
+}
+
+function buildHeaderMappedRows(rows, tabName = currentTab) {
+    const headers = getStorageHeaders(tabName);
+    const priceCols = CONFIG.tabs[tabName]?.priceCols || [];
+    return rows.map(source => headers.map((header, index) => {
+        const rawValue = getHeaderMappedCell(source, header);
+        if (header === 'ngay') return getDateOnly(formatExcelDateTime(rawValue));
+        if (priceCols.includes(index)) return parseMoney(rawValue);
+        return String(rawValue ?? '').trim();
+    })).filter(row => row.some((cell, index) => index !== 0 && String(cell || '').trim()));
+}
+
+function readHeaderMappedExcelRows(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', nodim: true });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                expandWorksheetRef(worksheet);
+                const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                const headers = (matrix[0] || []).map(normalizeExcelHeader);
+                const rows = matrix.slice(1).map(values => {
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        if (!(header in row)) row[header] = values[index] ?? '';
+                    });
+                    return row;
+                });
+                resolve(buildHeaderMappedRows(rows));
             } catch (err) {
                 reject(err);
             }
@@ -1879,7 +2139,9 @@ async function processFiles(files) {
                 ? readDsSpExcelRows
                 : currentTab === 'DH_HOAN'
                     ? readReturnOrderExcelRows
-                : readExcelRows;
+                    : (currentTab === 'NHAP_XUAT' || currentTab === 'TON_KHO')
+                        ? readHeaderMappedExcelRows
+                        : readExcelRows;
         const rowsFromFiles = await Promise.all(excelFiles.map(reader));
         const allRowsToUpload = rowsFromFiles
             .flat()
