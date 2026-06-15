@@ -30,7 +30,8 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="brand">
-                    <div class="logo" style="font-size: 16px; font-weight: 800; line-height: 1.2; text-align: center;">INFO<br>SYS</div>
+                    <div class="logo" style="font-size: 16px; font-weight: 800; line-height: 1.2; text-align: center;">
+                        INFO<br>SYS</div>
                     <h1 id="pageTitle">Hệ thống</h1>
                 </div>
                 <button class="sidebar-toggle" type="button" onclick="toggleSidebar()" title="Thu gọn menu">
@@ -46,6 +47,10 @@
                 <div class="tab" data-tab="DON_HANG" onclick="switchTab('DON_HANG')">
                     <i data-lucide="shopping-cart" style="width:18px;"></i>
                     <span>ĐƠN HÀNG</span>
+                </div>
+                <div class="tab" data-tab="DON_HANG_CHI_TIET" onclick="switchTab('DON_HANG_CHI_TIET')">
+                    <i data-lucide="list" style="width:18px;"></i>
+                    <span>ĐH CHI TIẾT</span>
                 </div>
                 <div class="tab" data-tab="HOA_DON" onclick="switchTab('HOA_DON')">
                     <i data-lucide="file-text" style="width:18px;"></i>
@@ -78,8 +83,8 @@
                         <input type="text" id="searchInput" class="search-input" placeholder="Tìm kiếm nhanh..."
                             oninput="filterTable()">
                     </div>
-                    <input id="truongFilter" class="filter-input" type="text" list="truongOptions" placeholder="Lọc theo Trường..."
-                        oninput="filterTable()">
+                    <input id="truongFilter" class="filter-input" type="text" list="truongOptions"
+                        placeholder="Lọc theo Trường..." oninput="filterTable()">
                     <select id="storeFilter" class="filter-input" onchange="filterTable()">
                         <option value="">Chọn gian hàng...</option>
                     </select>
@@ -99,7 +104,8 @@
                     <button id="deleteOrderBtn" type="button" onclick="deleteSelectedOrders()">
                         <i data-lucide="trash-2" style="width:18px;"></i> Xóa đơn hàng
                     </button>
-                    <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
+                    <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv"
+                        onchange="handleFileUpload(event)">
                 </div>
                 <div id="orderFilters" class="order-filters">
                     <label><span>Từ ngày</span><input id="orderDateFrom" type="date" onchange="filterTable()"></label>
@@ -112,12 +118,17 @@
                     </div>
                     <input id="orderMdhFilter" type="text" placeholder="Lọc MDH..." oninput="filterTable()">
                     <input id="orderMvdFilter" type="text" placeholder="Lọc MVD..." oninput="filterTable()">
-                    <select id="orderTinhTrangFilter" onchange="filterTable()">
-                        <option value="">Tất cả tình trạng</option>
-                        <option value="HỦY">HỦY</option>
-                        <option value="HOÀN TRẢ">HOÀN TRẢ</option>
-                        <option value="HOÀN THÀNH">HOÀN THÀNH</option>
-                    </select>
+                    <input id="orderTinhTrangFilter" type="hidden" value="">
+                    <div class="profit-filter-buttons">
+                        <button type="button" data-status-filter="HỦY" onclick="toggleStatusFilter('HỦY')">Hủy</button>
+                        <button type="button" data-status-filter="HOÀN"
+                            onclick="toggleStatusFilter('HOÀN')">Hoàn</button>
+                        <button type="button" data-status-filter="TRẢ" onclick="toggleStatusFilter('TRẢ')">Trả</button>
+                        <button type="button" data-status-filter="HOÀN TRẢ"
+                            onclick="toggleStatusFilter('HOÀN TRẢ')">Hoàn trả</button>
+                        <button type="button" data-status-filter="HOÀN THÀNH"
+                            onclick="toggleStatusFilter('HOÀN THÀNH')">Hoàn thành</button>
+                    </div>
                     <select id="orderTrangThaiFilter" onchange="filterTable()">
                         <option value="">Tất cả trạng thái</option>
                         <option value="HỦY">HỦY</option>
@@ -125,8 +136,10 @@
                     </select>
                     <input id="orderProfitFilter" type="hidden" value="">
                     <div class="profit-filter-buttons">
-                        <button type="button" data-profit-filter="negative" onclick="toggleOrderProfitFilter('negative')">Lợi nhuận âm</button>
-                        <button type="button" data-profit-filter="positive" onclick="toggleOrderProfitFilter('positive')">Lợi nhuận +</button>
+                        <button type="button" data-profit-filter="negative"
+                            onclick="toggleOrderProfitFilter('negative')">Lợi nhuận âm</button>
+                        <button type="button" data-profit-filter="positive"
+                            onclick="toggleOrderProfitFilter('positive')">Lợi nhuận +</button>
                     </div>
                     <div class="order-summary">
                         <span>DOANH_THU: <strong id="orderReceivedTotal">0</strong></span>
