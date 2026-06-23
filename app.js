@@ -65,13 +65,15 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             priceCols: []
         },
         'NHAP_XUAT': {
-            range: 'NHAP_XUAT!A2:F',
-            headers: ['id', 'ngay', 'truong', 'gian', 'id_sp', 'slg'],
-            priceCols: [5]
+            range: 'NHAP_XUAT!A2:H',
+            headers: ['id', 'ngay', 'truong', 'gian', 'id_sp', 'slg', 'don_gia', 'thanh_tien'],
+            displayHeaders: ['ngay', 'truong', 'gian', 'id_sp', 'slg', 'don_gia', 'thanh_tien'],
+            priceCols: [5, 6, 7]
         },
         'TON_KHO': {
             range: 'TON_KHO!A2:D',
             headers: ['id', 'gian', 'id_sp', 'ton_dau'],
+            displayHeaders: ['id', 'gian', 'id_sp', 'ton_dau', 'nhap', 'xuat', 'ton'],
             priceCols: [3]
         }
     }
@@ -208,12 +210,46 @@ async function fetchData() {
         const tabConfig = CONFIG.tabs[currentTab];
         const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/${tabConfig.range}`, { headers: { Authorization: `Bearer ${token}` } });
         const data = await res.json();
+        let nhapXuatRows = [];
+        if (currentTab === 'TON_KHO') {
+            try {
+                const resNX = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/NHAP_XUAT!A2:H`, { headers: { Authorization: `Bearer ${token}` } });
+                if (resNX.ok) {
+                    const nxData = await resNX.json();
+                    nhapXuatRows = nxData.values || [];
+                }
+            } catch (err) {
+                console.error('Failed to fetch NHAP_XUAT for TON_KHO', err);
+            }
+        }
+
         const rawRows = data.values || [];
         allData = rawRows.map((row, i) => {
             const arr = Array.isArray(row) ? row.slice() : [];
             arr._sheetRow = i + 2;
             return arr;
         });
+
+        if (currentTab === 'TON_KHO') {
+            allData.forEach(row => {
+                const gian = String(row[1] || '').trim();
+                const idSp = String(row[2] || '').trim().toUpperCase();
+                let nhap = 0;
+                let xuat = 0;
+                nhapXuatRows.forEach(nx => {
+                    if (String(nx[3] || '').trim() === gian && String(nx[4] || '').trim().toUpperCase() === idSp) {
+                        const isNhap = String(nx[2] || '').trim().toUpperCase() === 'NHẬP';
+                        const slg = Number(nx[5]) || 0;
+                        if (isNhap) nhap += slg;
+                        else xuat += slg;
+                    }
+                });
+                const tonDau = Number(row[3]) || 0;
+                row['nhap'] = nhap;
+                row['xuat'] = xuat;
+                row['ton'] = tonDau + nhap - xuat;
+            });
+        }
         filteredData = currentTab === 'DON_HANG' ? getDonHangSummaryRows() : [...allData];
         if (currentTab === 'DON_HANG' || currentTab === 'DON_HANG_CHI_TIET') {
             try { await fetchReturnStatusByOrderMap(true); } catch (err) { console.error(err); }
@@ -222,6 +258,9 @@ async function fetchData() {
         }
         if (currentTab === 'HOA_DON') {
             filteredData.sort((a, b) => parseHoaDonDate(b[1]) - parseHoaDonDate(a[1]));
+        }
+        if (currentTab === 'NHAP_XUAT') {
+            filteredData.sort((a, b) => parseDdMmYyyyDate(b[1]) - parseDdMmYyyyDate(a[1]));
         }
         populateFilters();
         renderHeaders();
@@ -267,6 +306,7 @@ function getDisplayHeaders(tabName = currentTab) {
 
 function isNumericDisplayHeader(header, tabName = currentTab) {
     if (tabName === 'DON_HANG') return DON_HANG_NUMERIC_HEADERS.has(header);
+    if (tabName === 'TON_KHO' && ['ton_dau', 'nhap', 'xuat', 'ton'].includes(header)) return true;
     const storageIndex = getStorageHeaders(tabName).indexOf(header);
     return storageIndex >= 0 && (CONFIG.tabs[tabName]?.priceCols || []).includes(storageIndex);
 }
@@ -287,6 +327,31 @@ function getDonHangSummaryRows(rows = allData) {
         const orderId = getRowId(row, 'DON_HANG');
         if (!orderId) return;
         if (!summaries.has(orderId)) summaries.set(orderId, row);
+    });
+    return [...summaries.values()];
+}
+
+function getNhapXuatSummaryRows(rows = allData) {
+    const summaries = new Map();
+    rows.forEach(row => {
+        const ngay = String(row[1] || '').trim();
+        const truong = String(row[2] || '').trim();
+        const gian = String(row[3] || '').trim();
+        if (!ngay || !truong || !gian) return;
+        const key = `${ngay}_${truong}_${gian}`;
+        if (!summaries.has(key)) {
+            summaries.set(key, [...row]);
+        } else {
+            const summaryRow = summaries.get(key);
+            const currentSlg = parseMoney(summaryRow[5] || 0);
+            const rowSlg = parseMoney(row[5] || 0);
+            summaryRow[5] = currentSlg + rowSlg;
+            summaryRow[4] = '(Nhiều sản phẩm)';
+            summaryRow[6] = '';
+            const currentTotal = parseMoney(summaryRow[7] || 0);
+            const rowTotal = parseMoney(row[7] || 0);
+            summaryRow[7] = currentTotal + rowTotal;
+        }
     });
     return [...summaries.values()];
 }
@@ -387,7 +452,7 @@ function getRowById(id) {
     return allData.find(row => getRowId(row) === key) || null;
 }
 
-function generateNextId(extraIds = []) {
+function generateNextId(extraIds = [], prefixTab = currentTab) {
     const ids = [...allData.map(getRowId), ...extraIds].filter(Boolean);
     const numericIds = ids.map(id => Number(id)).filter(n => Number.isFinite(n));
     if (numericIds.length === ids.length && numericIds.length) {
@@ -402,11 +467,11 @@ function generateNextId(extraIds = []) {
         String(now.getMinutes()).padStart(2, '0'),
         String(now.getSeconds()).padStart(2, '0')
     ].join('');
-    let candidate = `${ID_PREFIXES[currentTab] || currentTab}-${stamp}`;
+    let candidate = `${ID_PREFIXES[prefixTab] || prefixTab}-${stamp}`;
     let suffix = 1;
     while (ids.includes(candidate)) {
         suffix += 1;
-        candidate = `${ID_PREFIXES[currentTab] || currentTab}-${stamp}-${suffix}`;
+        candidate = `${ID_PREFIXES[prefixTab] || prefixTab}-${stamp}-${suffix}`;
     }
     return candidate;
 }
@@ -848,7 +913,7 @@ async function fetchDsSpOptions() {
         const idSp = String(row[1] || '').trim().toUpperCase();
         if (!idSp || seen.has(idSp)) return;
         seen.add(idSp);
-        dsSpOptionsCache.push({ id: idSp, name: String(row[2] || '').trim() });
+        dsSpOptionsCache.push({ id: idSp, name: String(row[2] || '').trim(), gia_nhap: parseMoney(row[3]), gia_ban: parseMoney(row[4]) });
     });
     return dsSpOptionsCache;
 }
@@ -1053,13 +1118,15 @@ function setOptionButtonValue(button, value) {
     if (currentTab === 'DON_HANG') {
         recalculateDonHangForm();
         recalculateDonHangDetail();
+    } else if (currentTab === 'NHAP_XUAT') {
+        recalculateNhapXuatForm();
     }
 }
 
 function renderNhapXuatProductSelect(value = '') {
     const selectedValue = String(value || '').trim().toUpperCase();
     const options = dsSpOptionsCache || [];
-    return `<select data-nhap-xuat-item-field="id_sp">
+    return `<select data-nhap-xuat-item-field="id_sp" onchange="recalculateNhapXuatForm()">
         <option value=""></option>
         ${options.map(item => {
         const label = item.name ? `${item.id} - ${item.name}` : item.id;
@@ -1069,44 +1136,74 @@ function renderNhapXuatProductSelect(value = '') {
 }
 
 function renderNhapXuatItemRow(item = {}) {
-    return `<tr>
+    return `<tr data-sheet-row="${item._sheetRow || ''}">
         <td>${renderNhapXuatProductSelect(item.id_sp)}</td>
-        <td><input data-nhap-xuat-item-field="slg" type="number" min="0" step="1" value="${escapeHtml(item.slg || '')}"></td>
-        <td><button type="button" class="secondary-btn compact-btn" onclick="removeNhapXuatItemRow(this)">Xóa</button></td>
+        <td><input data-nhap-xuat-item-field="slg" type="number" min="0" step="1" value="${escapeHtml(item.slg || '')}" oninput="recalculateNhapXuatForm()"></td>
+        <td><input data-nhap-xuat-item-field="don_gia" type="text" readonly value="" style="background: #f8fafc; color: #64748b;"></td>
+        <td><input data-nhap-xuat-item-field="thanh_tien" type="text" readonly value="" style="background: #f8fafc; color: #64748b; font-weight: bold;"></td>
+        <td style="text-align: center; vertical-align: middle;"><input type="checkbox" data-nhap-xuat-item-field="xac_nhan" ${item.xac_nhan !== false ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer; margin-top: 5px;"></td>
+        <td style="text-align: center; vertical-align: middle;"><button type="button" class="icon-btn" style="color: #ef4444; border: transparent; margin: 0 auto;" onclick="removeNhapXuatItemRow(this)"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
     </tr>`;
 }
 
-function renderNhapXuatForm(row = null) {
+function renderNhapXuatForm(groupRows = null) {
+    const isEditing = groupRows && Array.isArray(groupRows) && groupRows.length > 0;
+    const firstRow = isEditing ? groupRows[0] : null;
     const container = document.getElementById('formFields');
-    const idValue = row ? row[0] : generateNextId();
-    const dateValue = getFormRowValue(row, 'ngay', 1);
-    const fieldValue = row ? String(row[2] || '').trim() : 'NHẬP';
-    const storeValue = row ? String(row[3] || '').trim() : '';
-    const items = row
-        ? [{ id_sp: row[4] || '', slg: row[5] || '' }]
-        : [{ id_sp: '', slg: '' }];
+    const idValue = firstRow ? firstRow[0] : generateNextId();
+    const dateValue = getFormRowValue(firstRow, 'ngay', 1);
+    const fieldValue = firstRow ? String(firstRow[2] || '').trim() : 'NHẬP';
+    const storeValue = firstRow ? String(firstRow[3] || '').trim() : '';
+    
+    const items = isEditing
+        ? groupRows.map(r => ({ id_sp: r[4] || '', slg: r[5] || '', xac_nhan: true, _sheetRow: getDataSheetRow(r) }))
+        : [{ id_sp: '', slg: '', xac_nhan: true, _sheetRow: '' }];
+
+    const originalSheetRows = isEditing ? groupRows.map(r => getDataSheetRow(r)).join(',') : '';
+
     container.innerHTML = `
         <input id="formField_0" data-field="id" type="hidden" value="${escapeHtml(idValue)}">
+        <input id="nhapXuatOriginalSheetRows" type="hidden" value="${originalSheetRows}">
         <div class="form-section-grid">
             <label><span>NGÀY</span><input id="formField_1" data-field="ngay" type="date" value="${escapeHtml(dateValue)}"></label>
             <label><span>TRƯỜNG</span>${renderOptionButtons('nhap_xuat_truong', fieldValue, ['NHẬP', 'XUẤT'], 'id="formField_2" data-field="truong"')}</label>
             <label><span>GIAN</span><select id="formField_3" data-field="gian"><option value=""></option>${thongTinStoreNames.map(option => `<option value="${escapeHtml(option)}" ${storeValue === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>
         </div>
         <div class="form-table-section">
-            <div class="form-table-title">
-                <strong>SẢN PHẨM</strong>
-                ${row ? '' : '<button type="button" class="secondary-btn compact-btn" onclick="addNhapXuatItemRow()">+ Thêm sản phẩm</button>'}
+            <div class="form-table-title" style="margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <strong style="font-size: 1.1rem; color: var(--primary);">SẢN PHẨM</strong>
+                    <button type="button" class="secondary-btn compact-btn" style="display: flex; align-items: center; gap: 6px;" onclick="addNhapXuatItemRow()"><i data-lucide="plus" style="width:16px;"></i> Thêm sản phẩm</button>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="secondary-btn compact-btn" onclick="toggleAllNhapXuatConfirm(true)">Xác nhận hết</button>
+                    <button type="button" class="secondary-btn compact-btn" onclick="toggleAllNhapXuatConfirm(false)">Bỏ xác nhận</button>
+                </div>
             </div>
-            <table class="form-edit-table">
-                <thead><tr><th>ID_SP</th><th>SLG</th><th></th></tr></thead>
-                <tbody id="nhapXuatItemsBody">${items.map(renderNhapXuatItemRow).join('')}</tbody>
-            </table>
+            <div style="overflow-x: auto; padding-bottom: 4px; border-radius: 8px; border: 1px solid var(--border);">
+                <table class="form-edit-table" style="min-width: 700px; border: none;">
+                    <thead><tr>
+                        <th style="width: 35%; background: #f8fafc;">ID_SP</th>
+                        <th style="width: 15%; background: #f8fafc;">SLG</th>
+                        <th style="width: 20%; background: #f8fafc;">ĐƠN GIÁ</th>
+                        <th style="width: 20%; background: #f8fafc;">THÀNH TIỀN</th>
+                        <th style="width: 10%; text-align: center; background: #f8fafc;">XÁC NHẬN</th>
+                        <th style="width: 50px; background: #f8fafc;"></th>
+                    </tr></thead>
+                    <tbody id="nhapXuatItemsBody">${items.map(renderNhapXuatItemRow).join('')}</tbody>
+                </table>
+            </div>
         </div>
     `;
+    setTimeout(() => {
+        recalculateNhapXuatForm();
+        lucide.createIcons();
+    }, 0);
 }
 
 function addNhapXuatItemRow() {
     document.getElementById('nhapXuatItemsBody')?.insertAdjacentHTML('beforeend', renderNhapXuatItemRow());
+    lucide.createIcons();
 }
 
 function removeNhapXuatItemRow(button) {
@@ -1114,18 +1211,53 @@ function removeNhapXuatItemRow(button) {
     const rows = body ? [...body.querySelectorAll('tr')] : [];
     if (rows.length <= 1) {
         const row = button.closest('tr');
-        row?.querySelectorAll('select,input').forEach(input => { input.value = ''; });
+        row?.querySelectorAll('select,input[type="number"],input[type="text"]').forEach(input => { input.value = ''; });
+        row?.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = false; });
         return;
     }
     button.closest('tr')?.remove();
+    recalculateNhapXuatForm();
 }
 
-function renderFormFields(row = null) {
+function toggleAllNhapXuatConfirm(checked) {
+    document.querySelectorAll('#nhapXuatItemsBody input[data-nhap-xuat-item-field="xac_nhan"]').forEach(cb => {
+        cb.checked = checked;
+    });
+}
+
+function recalculateNhapXuatForm() {
+    if (currentTab !== 'NHAP_XUAT') return;
+    const truong = document.getElementById('formField_2')?.value.trim() || 'NHẬP';
+    const isNhap = truong === 'NHẬP';
+    const optionsMap = new Map((dsSpOptionsCache || []).map(o => [o.id, o]));
+    
+    document.querySelectorAll('#nhapXuatItemsBody tr').forEach(tr => {
+        const idSp = tr.querySelector('[data-nhap-xuat-item-field="id_sp"]')?.value.trim() || '';
+        const slgInput = tr.querySelector('[data-nhap-xuat-item-field="slg"]');
+        const donGiaInput = tr.querySelector('[data-nhap-xuat-item-field="don_gia"]');
+        const thanhTienInput = tr.querySelector('[data-nhap-xuat-item-field="thanh_tien"]');
+        
+        let donGia = 0;
+        if (idSp && optionsMap.has(idSp)) {
+            const product = optionsMap.get(idSp);
+            donGia = isNhap ? product.gia_nhap : product.gia_ban;
+        }
+        
+        const slg = parseMoney(slgInput?.value || '');
+        const thanhTien = donGia * slg;
+        
+        if (donGiaInput) donGiaInput.value = formatDisplayNumber(donGia);
+        if (thanhTienInput) thanhTienInput.value = formatDisplayNumber(thanhTien);
+    });
+}
+
+function renderFormFields(rowOrGroup = null) {
     const container = document.getElementById('formFields');
     if (currentTab === 'NHAP_XUAT') {
-        renderNhapXuatForm(row);
+        renderNhapXuatForm(rowOrGroup);
         return;
     }
+    const row = rowOrGroup;
     const headers = getStorageHeaders();
     container.innerHTML = headers.map((header, idx) => {
         const rawValue = getFormRowValue(row, header, idx);
@@ -1193,6 +1325,18 @@ async function openRecordForm(rowIndex = null) {
 
     document.getElementById('editingSheetRow').value = row ? getDataSheetRow(row) : '';
     if (currentTab === 'NHAP_XUAT') {
+        modal.classList.add('side-panel-mask');
+        let groupRows = null;
+        if (row) {
+            const ngay = String(row[1] || '').trim();
+            const truong = String(row[2] || '').trim();
+            const gian = String(row[3] || '').trim();
+            groupRows = allData.filter(r => 
+                String(r[1] || '').trim() === ngay && 
+                String(r[2] || '').trim() === truong && 
+                String(r[3] || '').trim() === gian
+            );
+        }
         try {
             await fetchDsSpOptions();
         } catch (err) {
@@ -1200,8 +1344,11 @@ async function openRecordForm(rowIndex = null) {
             alert(err.message);
             return;
         }
+        renderFormFields(groupRows);
+    } else {
+        modal.classList.remove('side-panel-mask');
+        renderFormFields(row);
     }
-    renderFormFields(row);
     if (currentTab === 'DON_HANG') {
         document.getElementById('formFields').oninput = recalculateDonHangForm;
         recalculateDonHangForm();
@@ -1428,6 +1575,46 @@ async function saveDonHangDetail() {
     }
 }
 
+async function syncTonKhoFromNhapXuat(gian, idSps) {
+    if (!gian || !idSps || !idSps.length) return;
+    try {
+        const token = await getAccessToken();
+        const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/TON_KHO!A2:D`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const tonKhoRows = data.values || [];
+        
+        const existingTonKhoSet = new Set(
+            tonKhoRows
+                .filter(row => String(row[1] || '').trim() === gian)
+                .map(row => String(row[2] || '').trim().toUpperCase())
+        );
+        
+        const idsToProcess = [...new Set(idSps.map(id => id.trim().toUpperCase()))].filter(Boolean);
+        const newTonKhoRows = [];
+        const existingIds = tonKhoRows.map(row => String(row[0] || '').trim());
+        
+        for (const idSp of idsToProcess) {
+            if (!existingTonKhoSet.has(idSp)) {
+                const newId = generateNextId([...existingIds, ...newTonKhoRows.map(r => r[0])], 'TON_KHO');
+                newTonKhoRows.push([newId, gian, idSp, 0]);
+                existingTonKhoSet.add(idSp);
+            }
+        }
+        
+        if (newTonKhoRows.length > 0) {
+            const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}/values/TON_KHO!A2:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: newTonKhoRows })
+            });
+            if (!appendRes.ok) console.error('Failed to append to TON_KHO');
+        }
+    } catch (err) {
+        console.error('Error syncing TON_KHO:', err);
+    }
+}
+
 async function saveRecordFromForm(event) {
     event.preventDefault();
     const headers = getStorageHeaders();
@@ -1439,30 +1626,72 @@ async function saveRecordFromForm(event) {
             const truong = document.getElementById('formField_2')?.value.trim() || '';
             const gian = document.getElementById('formField_3')?.value.trim() || '';
             const itemRows = [...document.querySelectorAll('#nhapXuatItemsBody tr')]
+                .filter(tr => tr.querySelector('[data-nhap-xuat-item-field="xac_nhan"]')?.checked)
                 .map((tr, index) => {
                     const idSp = tr.querySelector('[data-nhap-xuat-item-field="id_sp"]')?.value.trim() || '';
                     const slg = parseMoney(tr.querySelector('[data-nhap-xuat-item-field="slg"]')?.value || '');
-                    return { idSp, slg, index };
+                    const donGia = parseMoney(tr.querySelector('[data-nhap-xuat-item-field="don_gia"]')?.value || '');
+                    const thanhTien = parseMoney(tr.querySelector('[data-nhap-xuat-item-field="thanh_tien"]')?.value || '');
+                    const sheetRow = tr.dataset.sheetRow || '';
+                    return { idSp, slg, donGia, thanhTien, sheetRow, index };
                 })
                 .filter(item => item.idSp || item.slg);
             if (!ngay || !truong || !gian) throw new Error('Vui lòng nhập đủ ngày, trường và gian.');
-            if (!itemRows.length) throw new Error('Vui lòng thêm ít nhất một sản phẩm.');
-            if (itemRows.some(item => !item.idSp || !item.slg)) throw new Error('Mỗi dòng sản phẩm phải có đủ ID_SP và SLG.');
+            
+            const originalSheetRows = (document.getElementById('nhapXuatOriginalSheetRows')?.value || '').split(',').filter(Boolean).map(Number);
+            
+            if (!itemRows.length) {
+                if (originalSheetRows.length) {
+                    if (!confirm('Bạn đã bỏ xác nhận tất cả sản phẩm. Toàn bộ nhóm dữ liệu này sẽ bị xóa. Bạn có chắc chắn?')) {
+                        return;
+                    }
+                    document.getElementById('loading').style.display = 'flex';
+                    document.querySelector('#loading p').innerText = `Đang xóa dữ liệu...`;
+                    await deleteSheetRows('NHAP_XUAT', originalSheetRows);
+                    closeProductForm();
+                    await fetchData();
+                    filterTable();
+                    return;
+                } else {
+                    throw new Error('Vui lòng thêm và chọn xác nhận ít nhất một sản phẩm hợp lệ.');
+                }
+            }
+            
+            if (itemRows.some(item => !item.idSp || !item.slg)) throw new Error('Mỗi dòng sản phẩm được xác nhận phải có đủ ID_SP và SLG.');
+            
             const rows = itemRows.map((item, index) => [
-                editingSheetRow ? baseId : (index === 0 ? baseId : `${baseId}-${index + 1}`),
+                baseId,
                 ngay,
                 truong,
                 gian,
                 item.idSp,
-                item.slg
+                item.slg,
+                item.donGia,
+                item.thanhTien
             ]);
             document.getElementById('loading').style.display = 'flex';
             document.querySelector('#loading p').innerText = `Đang lưu dữ liệu...`;
-            if (editingSheetRow) {
-                await writeRecordRow(rows[0], editingSheetRow);
-            } else {
-                await appendRecordRows(rows);
+            
+            const newRows = [];
+            for (let i = 0; i < rows.length; i++) {
+                if (i < originalSheetRows.length) {
+                    await writeRecordRow(rows[i], originalSheetRows[i]);
+                } else {
+                    newRows.push(rows[i]);
+                }
             }
+            if (newRows.length) {
+                await appendRecordRows(newRows);
+            }
+            if (originalSheetRows.length > rows.length) {
+                const rowsToDelete = originalSheetRows.slice(rows.length);
+                await deleteSheetRows('NHAP_XUAT', rowsToDelete);
+            }
+            
+            document.querySelector('#loading p').innerText = `Đang đồng bộ tồn kho...`;
+            const uniqueIdSps = [...new Set(itemRows.map(item => item.idSp))];
+            await syncTonKhoFromNhapXuat(gian, uniqueIdSps);
+            
             closeProductForm();
             await fetchData();
             filterTable();
@@ -1557,7 +1786,7 @@ function renderTable() {
                 return `<td class="cost-toggle-cell" onclick="event.stopPropagation(); toggleOrderCostDetails();" title="Bấm để ${orderCostDetailsExpanded ? 'thu' : 'mở'} chi phí chi tiết">${escapeHtml(formatDisplayNumber(getDonHangCostTotal(row)))}</td>`;
             }
             const idx = storageHeaders.indexOf(header);
-            const cell = row[idx] || '';
+            const cell = (idx >= 0 ? row[idx] : row[header]) ?? '';
             if (idx === tabConfig.imgCol && cell) {
                 const firstImg = cell.split(',')[0].trim();
                 return `<td>
@@ -1703,6 +1932,9 @@ function filterTable() {
     }
     if (currentTab === 'HOA_DON') {
         filteredData.sort((a, b) => parseHoaDonDate(b[1]) - parseHoaDonDate(a[1]));
+    }
+    if (currentTab === 'NHAP_XUAT') {
+        filteredData.sort((a, b) => parseDdMmYyyyDate(b[1]) - parseDdMmYyyyDate(a[1]));
     }
     currentPage = 1;
     renderTable();
